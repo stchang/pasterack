@@ -31,9 +31,9 @@
                    "@(require scribble/eval)\n"
                    "@(define the-eval (make-base-eval))\n"
 ;                   "@codeblock[#:line-numbers 0]{\n~a}")
-                   "@codeblock{\n~a}\n"
-                   "@interaction-eval-show[#:eval the-eval ~a]")
-              code code))
+                   "@codeblock{\n~a}\n")
+;                   "@interaction-eval-show[#:eval the-eval ~a]")
+              code))
     #:mode 'text
     #:exists 'replace))
 (define (compile-scribble-file code)
@@ -44,12 +44,26 @@
                "--dest " (path->string here) " "
                (path->string tmp-scrbl-file))))
 
+(define google-analytics-script
+  (+++ "var _gaq = _gaq || [];\n"
+       "_gaq.push(['_setAccount', 'UA-44480001-1']);\n"
+       "_gaq.push(['_trackPageview']);\n"
+       "(function() {\n"
+       "var ga = document.createElement('script'); "
+       "ga.type = 'text/javascript'; ga.async = true;\n"
+       "ga.src = ('https:' == document.location.protocol "
+       "? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';\n"
+       "var s = document.getElementsByTagName('script')[0];"
+       "s.parentNode.insertBefore(ga, s);\n"
+       "})();"))
 
 (define (serve-home request)
   (define (response-generator embed/url)
     (response/xexpr
      `(html
-       (head (title "PasteRack: The Racket pastebin."))
+       (head
+        (title "PasteRack: The Racket pastebin.")
+        (script ((type "text/javascript")) ,google-analytics-script))
        (body
         (center
          (img ((src ,racket-logo-url)))
@@ -72,9 +86,19 @@
   (define bs (request-bindings request))
   (cond
    [(exists-binding? 'paste bs)
-    (define str (fresh-str))
-    (define paste-url (+++ paste-url-base str))
-    (SET str (extract-binding/single 'paste bs))
+    (define pastenum (fresh-str))
+    (define paste-url (+++ paste-url-base pastenum))
+    (define code (extract-binding/single 'paste bs))
+    (define html-str
+      (if (compile-scribble-file code)
+          (with-input-from-file tmp-html-file port->bytes)
+          code))
+      ;; (car (filter
+      ;;       (lambda (d) (equal? "main" (se-path* '(div #:class) d)))
+      ;;       (se-path*/list '(div)
+      ;;         (xml->xexpr (document-element
+      ;;                      (with-input-from-file tmp-html-file read-xml)))))))
+    (SET pastenum html-str)
     (response/xexpr
      `(html ()
         (head ()
@@ -87,22 +111,23 @@
         (body () "ERROR" ,(mk-link pastebin-url "Go Back"))))]))
 
 (define (serve-paste request pastenum)
-  (define code (GET/str pastenum))
+  (define html-str (GET pastenum))
   (cond
-   [(not code)
+   [(not html-str)
     (response/xexpr
      `(html() (head ())
         (body ()
          ,(format "Paste # ~a doesn't exist." pastenum) (br)
          ,(mk-link pastebin-url "Go Back"))))]
    [else
-    (compile-scribble-file code)
-    (define main-div
-      (car (filter
-            (lambda (d) (equal? "main" (se-path* '(div #:class) d)))
-            (se-path*/list '(div)
-              (xml->xexpr (document-element
-                           (with-input-from-file tmp-html-file read-xml)))))))
+;   (compile-scribble-file code)
+   (define main-div
+     (with-handlers ([exn:fail? (lambda (x) (bytes->string/utf-8 html-str))])
+       (car (filter
+             (lambda (d) (equal? "main" (se-path* '(div #:class) d)))
+             (se-path*/list '(div)
+               (xml->xexpr (document-element
+                            (with-input-from-bytes html-str read-xml))))))))
     (define paste-url (string-append paste-url-base pastenum))
     (response/xexpr
      `(html ()
@@ -116,14 +141,18 @@
                  (title "default")            (type "text/css")))
           (link ((href "/scribble-style.css") (rel "stylesheet")
                  (title "default")            (type "text/css")))
-        (script ((src "/scribble-common.js")  (type "text/javascript"))))
+          (script ((src "/scribble-common.js")  (type "text/javascript"))))
       (body
        ((id "scribble-racket-lang-org"))
-       "Paste # " (a ((href ,paste-url)) ,pastenum)
+       ,(mk-link pastebin-url "PasteRack")
+       " Paste # " (a ((href ,paste-url)) ,pastenum)
        (div ((class "maincolumn"))
         ,(match main-div
-           [`(div ((class "main")) ,ver (p () ,code ,res))
-            `(div ((class "main")) (p () ,code (div "=>") ,res))])))))]))
+           [`(div ((class "main")) ,ver ,body)
+            `(div ((class "main")) ,body)]
+           [_ `(div ,main-div)])))))]))
+           ;; [`(div ((class "main")) ,ver (p () ,code ,res))
+           ;;  `(div ((class "main")) (p () ,code (div "=>") ,res))])))))]))
         ;; ,(cons (car main-div) (cons (cadr main-div) (cdddr main-div)))))))]))
          ;; (div ((class "main"))
          ;;   (blockquote ((class "SCodeFlow"))
