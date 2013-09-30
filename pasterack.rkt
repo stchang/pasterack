@@ -28,10 +28,12 @@
     (lambda ()
       (printf (+++ "#lang scribble/manual\n"
                    "@(require (for-label racket))\n"
+                   "@(require scribble/eval)\n"
+                   "@(define the-eval (make-base-eval))\n"
 ;                   "@codeblock[#:line-numbers 0]{\n~a}")
-                   "@codeblock{\n~a}")
-;                   "@racketblock[\n~a]")
-              code))
+                   "@codeblock{\n~a}\n"
+                   "@interaction-eval-show[#:eval the-eval ~a]")
+              code code))
     #:mode 'text
     #:exists 'replace))
 (define (compile-scribble-file code)
@@ -95,8 +97,12 @@
          ,(mk-link pastebin-url "Go Back"))))]
    [else
     (compile-scribble-file code)
-    (define doc
-      (document-element (with-input-from-file tmp-html-file read-xml)))
+    (define main-div
+      (car (filter
+            (lambda (d) (equal? "main" (se-path* '(div #:class) d)))
+            (se-path*/list '(div)
+              (xml->xexpr (document-element
+                           (with-input-from-file tmp-html-file read-xml)))))))
     (define paste-url (string-append paste-url-base pastenum))
     (response/xexpr
      `(html ()
@@ -115,9 +121,13 @@
        ((id "scribble-racket-lang-org"))
        "Paste # " (a ((href ,paste-url)) ,pastenum)
        (div ((class "maincolumn"))
-         (div ((class "main"))
-           (blockquote ((class "SCodeFlow"))
-            ,(se-path* '(blockquote) (xml->xexpr doc))))))))]))
+        ,(match main-div
+           [`(div ((class "main")) ,ver (p () ,code ,res))
+            `(div ((class "main")) (p () ,code (div "=>") ,res))])))))]))
+        ;; ,(cons (car main-div) (cons (cadr main-div) (cdddr main-div)))))))]))
+         ;; (div ((class "main"))
+         ;;   (blockquote ((class "SCodeFlow"))
+         ;;    ,(se-path* '(blockquote) doc-xexpr)))))))]))
 
 (define-values (do-dispatch mk-url)
   (dispatch-rules
