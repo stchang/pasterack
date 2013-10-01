@@ -6,16 +6,12 @@
 (require racket/system racket/runtime-path)
 (require redis
          data/ring-buffer)
+(require "pasterack-utils.rkt")
 (provide/contract (start (request? . -> . response?)))
 
-;; (define-runtime-path tmp-html-file "test.html")
-;; (define-runtime-path tmp-scrbl-file "test.scrbl")
 (define-runtime-path htdocs-dir "htdocs")
 (define-runtime-path here ".")
 (define-runtime-path tmp-dir "tmp")
-
-(define ++ string-append)
-(define +++ string-append)
 
 (define pastebin-url "http://www.pasterack.org/")
 (define paste-url-base (++ pastebin-url "pastes/"))
@@ -23,18 +19,24 @@
 (define racket-lang-url "http://racket-lang.org")
 (define racket-logo-url "http://racket-lang.org/logo.png")
 
-(define (mk-link url txt)
-  `(a ((href ,url) (onclick ,(+++ "top.location.href=\"" url "\""))) ,txt))
+(define (mk-paste-url paste-num) (++ paste-url-base paste-num))
 
-(define NUM-RECENT-PASTES 5)
+;; the top.location breaks out of the current frame
+(define (mk-link url txt)
+  `(a ((href ,url) (onclick ,(++ "top.location.href=\"" url "\""))) ,txt))
+
+(define (fresh-str)
+  (let loop () (define str (mk-rand-str)) (if (EXISTS str) (loop) str)))
+
+(define NUM-RECENT-PASTES 10)
 (define recent-pastes (empty-ring-buffer NUM-RECENT-PASTES))
 ;; initialize buffer with some pastes
-(ring-buffer-push! recent-pastes "4363")
+(ring-buffer-push! recent-pastes "9842")
 (ring-buffer-push! recent-pastes "4548")
-(ring-buffer-push! recent-pastes "8249")
 (ring-buffer-push! recent-pastes "9921")
-(ring-buffer-push! recent-pastes "7145")
-
+(ring-buffer-push! recent-pastes "9937")
+(ring-buffer-push! recent-pastes "1192")
+(ring-buffer-push! recent-pastes "9111")
 
 ;; returns output file name (as path), or #f on fail
 (define (write-codeblock-scrbl-file code)
@@ -49,9 +51,11 @@
     #:exists 'replace)
   tmp-name)
 (define (write-eval-scrbl-file code)
+  ;; parse out #lang if it's there
   (define lang-match (regexp-match #px"^\\#lang ([\\w/]+)\\s*(.*)" code))
-  (define code-no-lang (match lang-match [(list _ _ rst) rst] [_ code]))
-  (define lang (match lang-match [(list _ lang _) lang] [_ "racket"]))
+  (define-values (code-no-lang lang)
+    (match lang-match [(list _ lang rst) (values rst lang)]
+                      [_ (values code "racket")]))
   (define tmp-name (mk-rand-str))
   (define tmp-scrbl-file (build-path tmp-dir (++ tmp-name ".scrbl")))
   (with-output-to-file tmp-scrbl-file
@@ -66,14 +70,7 @@
       #:mode 'text
       #:exists 'replace)
   tmp-name)
-#;(define (compile-scribble-file code)
-  (with-handlers ([exn:fail? (lambda (x) (displayln (exn-message x)) #f)])
-    (write-scribble-file code)
-    (system (+++ "/home/stchang/pltpkg/racket/bin/scribble --html +m "
-;               "++xref-in setup/xref load-collections-xref "
-                 "--redirect-main " racket-docs-url " "
-                 "--dest " (path->string here) " "
-                 (path->string tmp-scrbl-file)))))
+
 (define (compile-scrbl-file/get-html name)
   (and
    (system (++ "/home/stchang/pltpkg/racket/bin/scribble --html +m "
@@ -93,20 +90,18 @@
 (define (generate-eval-html code)
   (compile-eval-scrbl-file/get-html (write-eval-scrbl-file code)))
 
-(define (mk-paste-url paste-num) (++ paste-url-base paste-num))
-
 (define google-analytics-script
-  (+++ "var _gaq = _gaq || [];\n"
-       "_gaq.push(['_setAccount', 'UA-44480001-1']);\n"
-       "_gaq.push(['_trackPageview']);\n"
-       "(function() {\n"
-       "var ga = document.createElement('script'); "
-       "ga.type = 'text/javascript'; ga.async = true;\n"
-       "ga.src = ('https:' == document.location.protocol "
-       "? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';\n"
-       "var s = document.getElementsByTagName('script')[0];"
-       "s.parentNode.insertBefore(ga, s);\n"
-       "})();"))
+  (++ "var _gaq = _gaq || [];\n"
+      "_gaq.push(['_setAccount', 'UA-44480001-1']);\n"
+      "_gaq.push(['_trackPageview']);\n"
+      "(function() {\n"
+      "var ga = document.createElement('script'); "
+      "ga.type = 'text/javascript'; ga.async = true;\n"
+      "ga.src = ('https:' == document.location.protocol "
+      "? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';\n"
+      "var s = document.getElementsByTagName('script')[0];"
+      "s.parentNode.insertBefore(ga, s);\n"
+      "})();"))
 
 (define (serve-home request)
   (define (response-generator embed/url)
@@ -118,29 +113,20 @@
        (body
         (center
          (img ((src ,racket-logo-url)))
-         (h1 "PasteRack: The "
+         (h1 ,(mk-link pastebin-url "PasteRack") ": The "
              ,(mk-link racket-lang-url "Racket") " pastebin.")
          (form ((action ,(embed/url process-paste)) (method "post"))
                (textarea ((rows "20") (cols "79") (name "paste")))
                (br)
                (input ((type "submit") (value "Submit Paste"))))
-         (br) (br) (br)
+         (br)
+         (h3 "Total pastes: " ,(number->string (DBSIZE)))
          (h3 "Recent pastes:")
          ,@(apply append
              (reverse
-              (for/list ([n NUM-RECENT-PASTES])
-                (define paste-num (ring-buffer-ref recent-pastes n))
-                (if paste-num
-                    (list (mk-link (mk-paste-url paste-num) paste-num) '(br))
-                    null)))))))))
+              (for/list ([pnum recent-pastes] #:when pnum)
+                (list (mk-link (mk-paste-url pnum) pnum) '(br))))))))))
   (send/suspend/dispatch response-generator))
-
-(define (mk-rand-str)
-  (bytes->string/utf-8 (list->bytes (for/list ([n 4]) (+ 49 (random 9))))))
-(define (fresh-str)
-  (let loop ()
-    (define str (mk-rand-str))
-    (if (EXISTS str) (loop) str)))
 
 (define (process-paste request)
   (define bs (request-bindings request))
@@ -151,14 +137,6 @@
     (define html-res (generate-paste-html pasted-code))
     (define paste-html-str (or html-res pasted-code))
     (define eval-html-str (and html-res (generate-eval-html pasted-code)))
-      ;; (if (compile-scribble-file pasted-code)
-      ;;     (with-input-from-file tmp-html-file port->bytes)
-      ;;     code))
-      ;; ;; (car (filter
-      ;; ;;       (lambda (d) (equal? "main" (se-path* '(div #:class) d)))
-      ;; ;;       (se-path*/list '(div)
-      ;; ;;         (xml->xexpr (document-element
-      ;; ;;                      (with-input-from-file tmp-html-file read-xml)))))))
     (define paste-url (mk-paste-url paste-num))
     (ring-buffer-push! recent-pastes paste-num)
     (SET/list paste-num (list paste-html-str (or eval-html-str "")))
@@ -208,10 +186,9 @@
           (link ((href "/scribble-style.css") (rel "stylesheet")
                  (title "default")            (type "text/css")))
           (script ((src "/scribble-common.js")  (type "text/javascript"))))
-      (body
-       ((id "scribble-racket-lang-org"))
-       ,(mk-link pastebin-url "PasteRack")
-       " Paste # " (a ((href ,paste-url)) ,pastenum)
+      (body ()
+       ,(mk-link pastebin-url "PasteRack") (br)
+       " Paste # " (a ((href ,paste-url)) ,pastenum) (br)
        (div ((class "maincolumn"))
         ,(match code-main-div
            [`(div ((class "main")) ,ver ,body)
@@ -244,26 +221,27 @@
                         [`(tr () (td () (p () (img
                             ((alt "image") ,height
                              (src ,filename) ,width)))))
+                         ;; rename file to avoid future clashes
+                         (define rxmatch
+                           (regexp-match #px"^(pict|\\d+)\\_*(\\d+)*\\.png"
+                                         filename))
+                         (unless rxmatch
+                           (error "scribble made non-pict.png ~a" filename))
+                         (match-define (list _ base offset) rxmatch)
+                         (define new-file
+                           (++ pastenum (if offset (++ "_" offset) "") ".png"))
+                         (define curr-file-path (build-path tmp-dir filename))
+                         (define new-file-path (build-path tmp-dir new-file))
+                         (unless (file-exists? new-file-path)
+                           (copy-file curr-file-path new-file-path)
+                           (delete-file curr-file-path))
                          `(tr () (td () (p () (img
                             ((alt "image") ,height
-                             (src ,(++ "/" filename)) ,width)))))]
+                             (src ,(++ "/" new-file)) ,width)))))]
                         [x x]))
                     results))))]
                  [_ `(div ,eval-main-div)]))]
-             ;; ;; filter void outputs
-             ;;  ,(filter
-             ;;    (lambda (x)
-             ;;      (match x
-             ;;        ['(p () (span ((class "RktRes")) "#" "<" "void" ">")) #f]
-             ;;        [_ #t]))
-             ;;        results))]
            [_ `(div ,code-main-div)])))))]))
-           ;; [`(div ((class "main")) ,ver (p () ,code ,res))
-           ;;  `(div ((class "main")) (p () ,code (div "=>") ,res))])))))]))
-        ;; ,(cons (car main-div) (cons (cadr main-div) (cdddr main-div)))))))]))
-         ;; (div ((class "main"))
-         ;;   (blockquote ((class "SCodeFlow"))
-         ;;    ,(se-path* '(blockquote) doc-xexpr)))))))]))
 
 (define-values (do-dispatch mk-url)
   (dispatch-rules
