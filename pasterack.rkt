@@ -31,12 +31,12 @@
 (define NUM-RECENT-PASTES 10)
 (define recent-pastes (empty-ring-buffer NUM-RECENT-PASTES))
 ;; initialize buffer with some pastes
-(ring-buffer-push! recent-pastes "9965")
-(ring-buffer-push! recent-pastes "3542")
-(ring-buffer-push! recent-pastes "3414")
-(ring-buffer-push! recent-pastes "5237")
-(ring-buffer-push! recent-pastes "9647")
-(ring-buffer-push! recent-pastes "5434")
+(ring-buffer-push! recent-pastes "1593")
+(ring-buffer-push! recent-pastes "3163")
+(ring-buffer-push! recent-pastes "9766")
+(ring-buffer-push! recent-pastes "3885")
+(ring-buffer-push! recent-pastes "3321")
+(ring-buffer-push! recent-pastes "4287")
 
 ;; returns output file name (as path), or #f on fail
 (define (write-codeblock-scrbl-file code)
@@ -110,22 +110,27 @@
        (head
         (title "PasteRack: The Racket pastebin.")
         (script ((type "text/javascript")) ,google-analytics-script))
-       (body
+       (body ((style "margin-top:10px"))
         (center
          (img ((src ,racket-logo-url)))
          (h1 ,(mk-link pastebin-url "PasteRack") ": The "
              ,(mk-link racket-lang-url "Racket") " pastebin.")
          (form ((action ,(embed/url process-paste)) (method "post"))
-               (textarea ((rows "20") (cols "79") (name "paste")))
+               (input ((type "text") (name "name") (size "91.9")))
+                      " (optional title)" (br)(br)
+               (textarea ((rows "20") (cols "80") (name "paste")))
                (br)
                (input ((type "submit") (value "Submit Paste"))))
          (br)
          (h3 "Total pastes: " ,(number->string (DBSIZE)))
          (h3 "Recent pastes:")
-         ,@(apply append
-             (reverse
-              (for/list ([pnum recent-pastes] #:when pnum)
-                (list (mk-link (mk-paste-url pnum) pnum) '(br))))))))))
+         (table ((style "margin-top:-15px"))
+         ,@(reverse
+            (for/list ([pnum recent-pastes] #:when pnum)
+              (define name (bytes->string/utf-8 (HGET pnum 'name)))
+              `(tr (td ((style "width:20px")))
+                   (td ,(mk-link (mk-paste-url pnum) pnum))
+                   (td ((style "width:2px"))) (td ,name))))))))))
   (send/suspend/dispatch response-generator))
 
 (define (process-paste request)
@@ -133,13 +138,15 @@
   (cond
    [(exists-binding? 'paste bs)
     (define paste-num (fresh-str))
+    (define paste-name (extract-binding/single 'name bs))
     (define pasted-code (extract-binding/single 'paste bs))
     (define html-res (generate-paste-html pasted-code))
     (define paste-html-str (or html-res pasted-code))
     (define eval-html-str (and html-res (generate-eval-html pasted-code)))
     (define paste-url (mk-paste-url paste-num))
     (ring-buffer-push! recent-pastes paste-num)
-    (SET/hash paste-num (hash 'code paste-html-str
+    (SET/hash paste-num (hash 'name paste-name
+                              'code paste-html-str
                               'eval (or eval-html-str "")
                               'time (get-time/iso8601)))
     (response/xexpr
@@ -171,9 +178,9 @@
          ,(format "Paste # ~a doesn't exist." pastenum) (br)
          ,(mk-link pastebin-url "Go Back"))))]
    [else
-    (match-define (hash-table ('code code-html)
-                              ('eval eval-html)
-                              ('time time-str)) retrieved-paste-hash)
+    (match-define
+     (hash-table ('name paste-name) ('code code-html)
+                 ('eval eval-html)  ('time time-str)) retrieved-paste-hash)
     (define code-main-div (get-main-div code-html))
     (define eval-main-div (get-main-div eval-html))
     (define paste-url (string-append paste-url-base pastenum))
@@ -182,19 +189,27 @@
         (head ()
           (meta ((content "text-html; charset=utf-8")
                  (http-equiv "content-type")))
-          (title ())
+          (title)
           (link ((href "/scribble.css")       (rel "stylesheet")
                  (title "default")            (type "text/css")))
           (link ((href "/racket.css")         (rel "stylesheet")
                  (title "default")            (type "text/css")))
           (link ((href "/scribble-style.css") (rel "stylesheet")
                  (title "default")            (type "text/css")))
-          (script ((src "/scribble-common.js")  (type "text/javascript"))))
+          (script ((src "/scribble-common.js")  (type "text/javascript")))
+          (script ,(++ "top.document.title=\"Paste" pastenum ":"
+                       (bytes->string/utf-8 paste-name) "\"")))
       (body ()
-       (div () ,(mk-link pastebin-url "Paste")
-            " # " (a ((href ,paste-url)) ,pastenum) (br)
-            (small ,(bytes->string/utf-8 time-str)) (br))
-       (div ((class "maincolumn"))
+       (div ((style "margin-left:10px;position:relative;float:left"))
+         (table ((cellspacing "0") (cellpadding "0"))
+           (tr (td ,(mk-link pastebin-url "PasteRack.org")))
+           (tr (td ((height "10px"))))
+           (tr (td "Paste # " (a ((href ,paste-url)) ,pastenum)))
+           (tr (td ((colspan "3")) (small ,(bytes->string/utf-8 time-str))))))
+       (div ((style "margin-top:-15px") (class "maincolumn"))
+         (h4 ((style "font-family:sans-serif"))
+             ,(bytes->string/utf-8 paste-name))
+         (br)
         ,(match code-main-div
            [`(div ((class "main")) ,ver ,body)
             `(div ((class "main"))
@@ -264,6 +279,6 @@
                #:quit? #f
                #:listen-ip #f
                #:port 8000
-               #:extra-files-paths (list tmp-dir htdocs-dir)
+               #:extra-files-paths (list htdocs-dir tmp-dir)
                #:servlet-path "/"
                #:servlet-regexp #rx".*")
