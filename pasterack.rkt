@@ -31,12 +31,12 @@
 (define NUM-RECENT-PASTES 10)
 (define recent-pastes (empty-ring-buffer NUM-RECENT-PASTES))
 ;; initialize buffer with some pastes
-(ring-buffer-push! recent-pastes "9842")
-(ring-buffer-push! recent-pastes "4548")
-(ring-buffer-push! recent-pastes "9921")
-(ring-buffer-push! recent-pastes "9937")
-(ring-buffer-push! recent-pastes "1192")
-(ring-buffer-push! recent-pastes "9111")
+(ring-buffer-push! recent-pastes "9965")
+(ring-buffer-push! recent-pastes "3542")
+(ring-buffer-push! recent-pastes "3414")
+(ring-buffer-push! recent-pastes "5237")
+(ring-buffer-push! recent-pastes "9647")
+(ring-buffer-push! recent-pastes "5434")
 
 ;; returns output file name (as path), or #f on fail
 (define (write-codeblock-scrbl-file code)
@@ -139,7 +139,9 @@
     (define eval-html-str (and html-res (generate-eval-html pasted-code)))
     (define paste-url (mk-paste-url paste-num))
     (ring-buffer-push! recent-pastes paste-num)
-    (SET/list paste-num (list paste-html-str (or eval-html-str "")))
+    (SET/hash paste-num (hash 'code paste-html-str
+                              'eval (or eval-html-str "")
+                              'time (get-time/iso8601)))
     (response/xexpr
      `(html ()
         (head ()
@@ -160,16 +162,18 @@
                          (with-input-from-bytes html-bytes read-xml))))))))
 
 (define (serve-paste request pastenum)
-  (define retrieved-paste (GET/list pastenum))
+  (define retrieved-paste-hash (GET/hash pastenum #:map-key bytes->symbol))
   (cond
-   [(null? retrieved-paste)
+   [(equal? (hash) retrieved-paste-hash)
     (response/xexpr
      `(html() (head ())
         (body ()
          ,(format "Paste # ~a doesn't exist." pastenum) (br)
          ,(mk-link pastebin-url "Go Back"))))]
    [else
-    (match-define (list code-html eval-html) (GET/list pastenum))
+    (match-define (hash-table ('code code-html)
+                              ('eval eval-html)
+                              ('time time-str)) retrieved-paste-hash)
     (define code-main-div (get-main-div code-html))
     (define eval-main-div (get-main-div eval-html))
     (define paste-url (string-append paste-url-base pastenum))
@@ -187,8 +191,9 @@
                  (title "default")            (type "text/css")))
           (script ((src "/scribble-common.js")  (type "text/javascript"))))
       (body ()
-       ,(mk-link pastebin-url "PasteRack") (br)
-       " Paste # " (a ((href ,paste-url)) ,pastenum) (br)
+       (div () ,(mk-link pastebin-url "Paste")
+            " # " (a ((href ,paste-url)) ,pastenum) (br)
+            (small ,(bytes->string/utf-8 time-str)) (br))
        (div ((class "maincolumn"))
         ,(match code-main-div
            [`(div ((class "main")) ,ver ,body)
