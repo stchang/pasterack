@@ -120,7 +120,11 @@
                       " (optional title)" (br)(br)
                (textarea ((rows "20") (cols "80") (name "paste")))
                (br)
-               (input ((type "submit") (value "Submit Paste"))))
+               (table (tr (td ((style "width:10em")))
+               (td ((style "width:8em"))
+                   (input ((type "submit") (value "Submit Paste"))))
+               (td (input ((type "checkbox") (name "astext") (value "off")))
+               " Submit as text only"))))
          (br)
          (h3 "Total pastes: " ,(number->string (DBSIZE)))
          (h3 "Recent pastes:")
@@ -140,7 +144,8 @@
     (define paste-num (fresh-str))
     (define paste-name (extract-binding/single 'name bs))
     (define pasted-code (extract-binding/single 'paste bs))
-    (define html-res (generate-paste-html pasted-code))
+    (define html-res
+      (if (exists-binding? 'astext bs) #f (generate-paste-html pasted-code)))
     (define paste-html-str (or html-res pasted-code))
     (define eval-html-str (and html-res (generate-eval-html pasted-code)))
     (define paste-url (mk-paste-url paste-num))
@@ -260,8 +265,8 @@
                              (src ,(++ "/" new-file)) ,width)))))]
                         [x x]))
                     results))))]
-                 [_ `(div ,eval-main-div)]))]
-           [_ `(div ,code-main-div)])))))]))
+                 [_ `(div (pre ,eval-main-div))]))]
+           [_ `(div (pre ,code-main-div))])))))]))
 
 (define-values (do-dispatch mk-url)
   (dispatch-rules

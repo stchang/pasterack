@@ -1,6 +1,6 @@
 pasterack
 =========
 
-The Racket evaluating [pastebin](http://www.pasterack.org).
+An evaluating [pastebin](http://www.pasterack.org) for Racket.
 
 pkg dependencies: ring-buffer, redis
