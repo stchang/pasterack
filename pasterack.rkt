@@ -31,22 +31,61 @@
 (define NUM-RECENT-PASTES 10)
 (define recent-pastes (empty-ring-buffer NUM-RECENT-PASTES))
 ;; initialize buffer with some pastes
-(ring-buffer-push! recent-pastes "1593")
-(ring-buffer-push! recent-pastes "3163")
-(ring-buffer-push! recent-pastes "9766")
-(ring-buffer-push! recent-pastes "3885")
-(ring-buffer-push! recent-pastes "3321")
-(ring-buffer-push! recent-pastes "4287")
+(ring-buffer-push! recent-pastes "4557") ; Sierpinski
+(ring-buffer-push! recent-pastes "9545") ; div0
+(ring-buffer-push! recent-pastes "3516") ; circles (test require)
+(ring-buffer-push! recent-pastes "3289") ; Greek letters
+(ring-buffer-push! recent-pastes "2531") ; lazy fib
+(ring-buffer-push! recent-pastes "7747") ; set bang
+(ring-buffer-push! recent-pastes "2417") ; scribble syntax
+(ring-buffer-push! recent-pastes "9425") ; big bang (test 1 line, 2 requires)
+(ring-buffer-push! recent-pastes "5291") ; typed/racket
+(ring-buffer-push! recent-pastes "8937") ; datalog
+
+(define hashlang-pat #px"^\\#lang ([\\w/]+)\\s*(.*)")
+(define scribblelang-pat #px"^scribble/.*")
+(define htdplang-pat #px"^htdp/.*")
+(define TRlang-pat #px"^typed/racket.*")
+(define require-pat #px"^\\(require (.*)\\)$")
+(define (hashlang? code)
+  (define in (open-input-string code))
+  (begin0 (read-language in (const #f)) (close-input-port in)))
+;; returns two string values, one for lang and one for the rest of the program
+(define (hashlang-split code)
+  (match (regexp-match hashlang-pat code)
+    [(list _ lang rst) (values lang rst)]
+    [_ (values "racket" code)]))
+(define (scribble-lang? lang) (regexp-match scribblelang-pat lang))
+(define (htdp-lang? lang) (regexp-match htdplang-pat lang))
+(define (TR-lang? lang) (regexp-match TRlang-pat lang))
+(define (require-datum? e) (get-require-spec e))
+(define (get-require-spec e) (regexp-match require-pat (to-string e)))
 
 ;; returns output file name (as path), or #f on fail
 (define (write-codeblock-scrbl-file code)
   (define tmp-name (mk-rand-str))
   (define tmp-scrbl-file (build-path tmp-dir (++ tmp-name ".scrbl")))
+  (define-values (lang code-no-lang) (hashlang-split code))
+  (define lang-lst
+    (cond [(scribble-lang? lang) (list "racket" lang)]
+          [(htdp-lang? lang) (list "racket")]
+          [(TR-lang? lang) (list "racket")]
+          [else (list lang)]))
+;  (printf "~v" lang-lst)
+  (define reqs   
+    (with-handlers ([exn:fail? (const null)])  ;; read fail = non-sexp syntax
+      (with-input-from-string code-no-lang
+        (lambda () (for/list ([e (in-port)] #:when (require-datum? e))
+                     (second (get-require-spec e)))))))
+;  (printf "~v" reqs) (flush-output)
   (with-output-to-file tmp-scrbl-file
-    (lambda () (printf (++ "#lang scribble/manual\n"
-                           "@(require (for-label racket))\n"
-                           "@codeblock{\n~a}")
-                       code))
+    (lambda () (printf
+      (++ "#lang scribble/manual\n"
+          "@(require (for-label " (string-join (append lang-lst reqs)) "))\n"
+;                  lang " " (apply ++ reqs) 
+;                  "@(require (for-label racket" "))\n"
+          "@codeblock|{\n~a}|")
+      code))
     #:mode 'text
     #:exists 'replace)
   tmp-name)
@@ -116,8 +155,9 @@
          (h1 ,(mk-link pastebin-url "PasteRack") ": The "
              ,(mk-link racket-lang-url "Racket") " pastebin.")
          (form ((action ,(embed/url process-paste)) (method "post"))
-               (input ((type "text") (name "name") (size "91.9")))
-                      " (optional title)" (br)(br)
+               (table (tr
+                 (td (input ((type "text") (name "name") (size "60"))))
+                 (td "(paste title)")))
                (textarea ((rows "20") (cols "80") (name "paste")))
                (br)
                (table (tr (td ((style "width:10em")))
