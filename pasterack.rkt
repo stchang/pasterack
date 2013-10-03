@@ -28,21 +28,44 @@
 (define (fresh-str)
   (let loop () (define str (mk-rand-str)) (if (EXISTS str) (loop) str)))
 
-(define NUM-RECENT-PASTES 10)
-(define recent-pastes (empty-ring-buffer NUM-RECENT-PASTES))
 ;; initialize buffer with some pastes
-(ring-buffer-push! recent-pastes "4557") ; Sierpinski
-(ring-buffer-push! recent-pastes "9545") ; div0
-(ring-buffer-push! recent-pastes "3516") ; circles (test require)
-(ring-buffer-push! recent-pastes "3289") ; Greek letters
-(ring-buffer-push! recent-pastes "2531") ; lazy fib
-(ring-buffer-push! recent-pastes "7747") ; set bang
-(ring-buffer-push! recent-pastes "2417") ; scribble syntax
-(ring-buffer-push! recent-pastes "9425") ; big bang (test 1 line, 2 requires)
-(ring-buffer-push! recent-pastes "5291") ; typed/racket
-(ring-buffer-push! recent-pastes "8937") ; datalog
+;; (ring-buffer-push! recent-pastes "4557") ; Sierpinski
+;; (ring-buffer-push! recent-pastes "9545") ; div0
+;; (ring-buffer-push! recent-pastes "3516") ; circles (test require)
+;; (ring-buffer-push! recent-pastes "3289") ; Greek letters
+;; (ring-buffer-push! recent-pastes "2531") ; lazy fib
+;; (ring-buffer-push! recent-pastes "7747") ; set bang
+;; (ring-buffer-push! recent-pastes "2417") ; scribble syntax
+;; (ring-buffer-push! recent-pastes "9425") ; big bang (test 1 line, 2 requires)
+;; (ring-buffer-push! recent-pastes "9265") ; typed/racket
+;; ;(ring-buffer-push! recent-pastes "7239") ; typed/racket
+;; (ring-buffer-push! recent-pastes "8937") ; datalog
 
-(define hashlang-pat #px"^\\#lang ([\\w/]+)\\s*(.*)")
+(define sample-pastes
+  '("4557" ; Sierpinski
+    "9545" ; div1
+    "3516" ; circles (test require)
+    "3289" ; Greek letters
+    "2531" ; lazy fib
+    "7747" ; set bang (test multi-expr, no #lang)
+    "2417" ; scribble syntax
+    "9425" ; big bang (test 2 requires on 1 line)
+    "9265" ; typed/racket
+;    "7239" ; another typed/racket
+    "8937" ; datalog
+    "2979" ; test limits, and forms in racket but not racket/base
+    "7169" ; racket/gui
+    "5352" ; test 2 specs in 1 require
+    "1216" ; another typed/racket
+    "6813" ; ffi
+    ))
+
+(define NUM-RECENT-PASTES 32)
+(define recent-pastes (empty-ring-buffer NUM-RECENT-PASTES))
+(for ([p sample-pastes]) (ring-buffer-push! recent-pastes p))
+
+(define hashlang-pat #px"^\\#lang ([\\w/-]+)\\s*(.*)")
+(define weblang-pat #px"^web-server.*")
 (define scribblelang-pat #px"^scribble/.*")
 (define htdplang-pat #px"^htdp/.*")
 (define TRlang-pat #px"^typed/racket.*")
@@ -58,6 +81,7 @@
 (define (scribble-lang? lang) (regexp-match scribblelang-pat lang))
 (define (htdp-lang? lang) (regexp-match htdplang-pat lang))
 (define (TR-lang? lang) (regexp-match TRlang-pat lang))
+(define (web-lang? lang) (regexp-match weblang-pat lang))
 (define (require-datum? e) (get-require-spec e))
 (define (get-require-spec e) (regexp-match require-pat (to-string e)))
 
@@ -70,6 +94,7 @@
     (cond [(scribble-lang? lang) (list "racket" lang)]
           [(htdp-lang? lang) (list "racket")]
           [(TR-lang? lang) (list "racket")]
+          [(web-lang? lang) (list "web-server" "web-server/http")]
           [else (list lang)]))
 ;  (printf "~v" lang-lst)
   (define reqs   
@@ -90,22 +115,54 @@
     #:exists 'replace)
   tmp-name)
 (define (write-eval-scrbl-file code)
+  (define-values (lang code-no-lang) (hashlang-split code))
   ;; parse out #lang if it's there
-  (define lang-match (regexp-match #px"^\\#lang ([\\w/]+)\\s*(.*)" code))
-  (define-values (code-no-lang lang)
-    (match lang-match [(list _ lang rst) (values rst lang)]
-                      [_ (values code "racket")]))
+;  (define lang-match (regexp-match #px"^\\#lang ([\\w/]+)\\s*(.*)" code))
+  ;; (define-values (code-no-lang lang)
+  ;;   (match lang-match [(list _ lang rst) (values rst lang)]
+  ;;                     [_ (values code "racket")]))
+;  (printf "~v" lang) (flush-output)
   (define tmp-name (mk-rand-str))
   (define tmp-scrbl-file (build-path tmp-dir (++ tmp-name ".scrbl")))
   (with-output-to-file tmp-scrbl-file
     (lambda ()
-      (printf (++ "#lang scribble/manual\n"
-                  "@(require scribble/eval)\n"
-                  "@(define the-eval (make-base-eval"
-                  (if (string=? "racket" lang) "" (++ " #:lang '" lang))
-                  "))\n"
-                  "@interaction[#:eval the-eval\n~a]")
-              code-no-lang))
+      ;; (printf (++ "#lang scribble/manual\n"
+      ;;             "@(require scribble/eval)\n"
+      ;;             "@(define the-eval (make-base-eval"
+      ;;             (if (string=? "racket" lang) "" (++ " #:lang '" lang))
+      ;;             "))\n"
+      ;;             "@interaction[#:eval the-eval\n~a]")
+      (printf
+       (++ "#lang scribble/manual\n"
+           "@(require scribble/eval racket/sandbox)\n"
+           "@(define-namespace-anchor anchor)\n"
+           "@(define the-eval\n"
+           "   (call-with-trusted-sandbox-configuration\n"
+           "    (lambda ()\n"
+           "      (parameterize ([sandbox-output 'string]\n"
+           "                     [sandbox-error-output 'string]\n"
+           "                     [sandbox-propagate-breaks #f]\n"
+           "                     [sandbox-namespace-specs "
+                                   "(cons "
+                            "(lambda () (namespace-anchor->namespace anchor)) "
+                            "'(racket/pretty file/convertible))]\n"
+           "                    [sandbox-path-permissions '([exists \"/\"])]\n"
+           "                    [sandbox-eval-limits '(8 64)])\n"
+           "        (let ([e (make-evaluator '" lang ")])\n"
+           ;; "          (let ([ns (namespace-anchor->namespace anchor)])\n"
+           ;; "            (call-in-sandbox-context e\n"
+           ;; "              (lambda () (namespace-attach-module ns "
+           ;;                              "'file/convertible)))\n"
+           "            (call-in-sandbox-context e\n"
+           "              (lambda ()\n"
+           ;; "                (unless (namespace-variable-value "
+           ;;                         "'pretty-print-handler #t (lambda () #f))\n"
+           ;; "                  (namespace-attach-module ns 'racket/pretty))\n"  
+           "                (current-print (dynamic-require 'racket/pretty "
+                                             "'pretty-print-handler))))\n"
+           "          e)))))\n"
+           "@interaction[#:eval the-eval\n~a]")
+       code-no-lang))
       #:mode 'text
       #:exists 'replace)
   tmp-name)
@@ -149,7 +206,23 @@
        (head
         (title "PasteRack: The Racket pastebin.")
         (script ((type "text/javascript")) ,google-analytics-script))
-       (body ((style "margin-top:10px"))
+       (body ((style "margin-top:20px"))
+         (div ((style "margin-left:5px;position:relative;float:left;margin-right:-10em"))
+           (h4 "Total pastes: " ,(number->string (DBSIZE)))
+           (h4 "Sample pastes:")
+           (table ((style "margin-top:-15px"))
+           ,@(for/list ([pnum sample-pastes])
+               (define name (bytes->string/utf-8 (HGET pnum 'name)))
+               `(tr (td ,(mk-link (mk-paste-url pnum) pnum))
+                    (td ((style "width:1px"))) (td ,name))))
+           (h4 "Recent pastes:")
+           (table ((style "margin-top:-15px"))
+           ,@(reverse
+              (for/list ([pnum recent-pastes] #:when pnum)
+                (define name (bytes->string/utf-8 (HGET pnum 'name)))
+                `(tr (td ,(mk-link (mk-paste-url pnum) pnum))
+                     (td ((style "width:1px"))) (td ,name))))))
+       (div 
         (center
          (img ((src ,racket-logo-url)))
          (h1 ,(mk-link pastebin-url "PasteRack") ": The "
@@ -158,23 +231,24 @@
                (table (tr
                  (td (input ((type "text") (name "name") (size "60"))))
                  (td "(paste title)")))
-               (textarea ((rows "20") (cols "80") (name "paste")))
+               (textarea ((rows "32") (cols "80") (name "paste")))
                (br)
                (table (tr (td ((style "width:10em")))
                (td ((style "width:8em"))
                    (input ((type "submit") (value "Submit Paste"))))
                (td (input ((type "checkbox") (name "astext") (value "off")))
                " Submit as text only"))))
-         (br)
-         (h3 "Total pastes: " ,(number->string (DBSIZE)))
-         (h3 "Recent pastes:")
-         (table ((style "margin-top:-15px"))
-         ,@(reverse
-            (for/list ([pnum recent-pastes] #:when pnum)
-              (define name (bytes->string/utf-8 (HGET pnum 'name)))
-              `(tr (td ((style "width:20px")))
-                   (td ,(mk-link (mk-paste-url pnum) pnum))
-                   (td ((style "width:2px"))) (td ,name))))))))))
+;         (br)
+;         (h3 "Recent pastes:")
+         ;; (table ((style "margin-top:-15px"))
+         ;; ,@(reverse
+         ;;    (for/list ([pnum recent-pastes] #:when pnum)
+         ;;      (define name (bytes->string/utf-8 (HGET pnum 'name)))
+         ;;      `(tr (td ((style "width:20px")))
+         ;;           (td ,(mk-link (mk-paste-url pnum) pnum))
+         ;;           (td ((style "width:2px"))) (td ,name))))))
+         ))
+         (div ((style "width:10em;position:relative;float:right")))))))
   (send/suspend/dispatch response-generator))
 
 (define (process-paste request)
