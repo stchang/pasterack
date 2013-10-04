@@ -35,12 +35,12 @@
     "7747" ; set bang (test multi-expr, no #lang)
     "2417" ; scribble syntax
     "9425" ; big bang (test 2 requires on 1 line)
-    "9265" ; typed/racket
+    "8474" ; typed/racket
     "8937" ; datalog
     "2979" ; test limits, and forms in racket but not racket/base
     "7169" ; racket/gui
     "5352" ; test 2 specs in 1 require
-    "1216" ; another typed/racket
+    "9476" ; another typed/racket
     "6813" ; ffi
     "5752" ; bs ipsum (as text)
     ))
@@ -71,6 +71,10 @@
 (define (require-datum? e) (get-require-spec e))
 (define (get-require-spec e) (regexp-match require-pat (to-string e)))
 
+(define TR-bad-ids
+  (++ "#%module-begin with-handlers lambda λ #%top-interaction for for* "
+      "define default-continuation-prompt-tag"))
+
 ;; returns generated pastenum
 (define (write-codeblock-scrbl-file code)
   (define tmp-name (mk-rand-str))
@@ -79,7 +83,7 @@
   (define lang-lst
     (cond [(scribble-lang? lang) (list "racket" lang)]
           [(htdp-lang? lang) (list "racket")]
-          [(TR-lang? lang) (list "racket")]
+          [(TR-lang? lang) (list)]
           [(web-lang? lang) (list "web-server" "web-server/http")]
           [else (list lang)]))
   (define reqs   
@@ -90,7 +94,12 @@
   (with-output-to-file tmp-scrbl-file
     (lambda () (printf
       (++ "#lang scribble/manual\n"
-          "@(require (for-label " (string-join (append lang-lst reqs)) "))\n"
+          "@(require (for-label "
+          (if (TR-lang? lang)
+              (++ "(except-in typed/racket " TR-bad-ids ")\n"
+                  "(only-meta-in 0 (only-in typed/racket " TR-bad-ids "))\n")
+              "")
+          (string-join (append lang-lst reqs)) "))\n"
           "@codeblock|{\n~a}|")
       code))
     #:mode 'text
@@ -168,7 +177,7 @@
     (response/xexpr
      `(html
        (head
-        (title "PasteRack: The Racket pastebin.")
+        (title "PasteRack: An evaluating Racket pastebin.")
         (script ((type "text/javascript")) ,google-analytics-script))
        (body ((style "margin-top:20px"))
          (div ((style "margin-left:5px;position:relative;float:left;margin-right:-10em"))
@@ -189,7 +198,7 @@
        (div 
         (center
          (img ((src ,racket-logo-url)))
-         (h1 ,(mk-link pastebin-url "PasteRack") ": The "
+         (h1 ,(mk-link pastebin-url "PasteRack") ": An evaluating "
              ,(mk-link racket-lang-url "Racket") " pastebin.")
          (form ((action ,(embed/url process-paste)) (method "post"))
                (table (tr
