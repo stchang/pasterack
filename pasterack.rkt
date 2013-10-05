@@ -322,7 +322,7 @@
     (define eval-main-div (get-main-div eval-html))
     (define paste-url (string-append paste-url-base pastenum))
     (response/xexpr
-     `(html ()
+     `(html ([style "background-image:url('/plt-back.1024x768.png');"])
         (head ()
           (meta ((content "text-html; charset=utf-8")
                  (http-equiv "content-type")))
@@ -333,22 +333,26 @@
                  (title "default")            (type "text/css")))
           (link ((href "/scribble-style.css") (rel "stylesheet")
                  (title "default")            (type "text/css")))
+          (link ([type "text/css"] [rel "stylesheet"]
+                 [href "http://fonts.googleapis.com/css?family=PT+Sans"]))
+          (link ([type "text/css"] [rel "stylesheet"]
+                 [href "http://fonts.googleapis.com/css?family=Droid+Sans+Mono"]))
           (script ((src "/scribble-common.js")  (type "text/javascript")))
           (script ,(++ "top.document.title=\"Paste" pastenum ":"
                        (bytes->string/utf-8 paste-name) "\"")))
-      (body ()
-       (div ((style "position:absolute;left:20px;top:24px"))
-;       (div ((style "margin-left:10px;position:relative;float:left"))
-         (table ((cellspacing "0") (cellpadding "0"))
+      (body ([style "font-family:'PT Sans',sans-serif"])
+       ;; left ----------------------------------------------------------------
+       (div ([style "position:absolute;left:1em;top:2em"])
+         (table ([cellspacing "0"] [cellpadding "0"])
            (tr (td ,(mk-link pastebin-url "PasteRack.org")))
            (tr (td ((height "10px"))))
            (tr (td "Paste # " (a ((href ,paste-url)) ,pastenum)))
-           (tr (td ((colspan "3")) (small ,(bytes->string/utf-8 time-str))))))
-       (div ((style "position:absolute;left:12em"))
-;       (div ((style "margin-top:-15px") (class "maincolumn"))
+           (tr (td ([colspan "3"] [style "font-size:90%"])
+                   ,(bytes->string/utf-8 time-str)))))
+       ;; middle --------------------------------------------------------------
+       (div ((style "position:absolute;left:14em"))
         ,(let ([name (bytes->string/utf-8 paste-name)])
-            (if (string=? name "") '(br)
-                `(h4 ((style "font-family:sans-serif")) ,name)))
+            (if (string=? name "") '(br) `(h4 ,name)))
         ,(match code-main-div
            [`(div ((class "main")) ,ver
                (blockquote ((class "SCodeFlow"))
@@ -357,19 +361,21 @@
               (map
                (lambda (r)
                  (match r
-                   [`(tr () . ,rst)
-                    `(li (span ((style "font-size:large")) . ,rst))]
+                   [`(tr () (td () . ,rst))
+                    `(li (span ((style "font-family:'Droid Sans Mono',monospace;font-size:125%")) . ,rst))]
                    [_ r]))
                rows))
-            `(div ((class "main"))
-              (blockquote ((class "SCodeFlow"))
-                 (ol ((start "0")(style "font-size:small;color:#A0A0A0"))
-                   . ,new-rows))
+;            `(div ;((class "main"))
+            `(div ([style "font-family:'Droid Sans Mono',monospace"])
+          ;    (blockquote ;((class "SCodeFlow"))
+                 (ol ((start "0")(style "font-size:70%;color:#A0A0A0"))
+                   . ,new-rows)
               (p "=>")
               ,(match eval-main-div
                  [`(div ((class "main")) ,ver
                      (blockquote ,attr1 (table ,attr2 . ,results)))
-                  `(blockquote ,attr1 (table ,attr2 .
+;                  `(blockquote ,attr1 (table ,attr2 .
+                  `(blockquote (table ([style "font-size:90%"]) .
                   ,(filter
                     identity
                     (map
@@ -407,6 +413,10 @@
                          `(tr () (td () (p () (img
                             ((alt "image") ,height
                              (src ,(++ "/" new-file)) ,width)))))]
+                        ;; nested table
+                        [`(tr () (td () (table ,attrs . ,rows)))
+                         `(tr () (td () (table ([style "font-size:95%"])
+                                               . ,rows)))]
                         [x x]))
                     results))))]
                  [_ `(div (pre ,eval-main-div))]))]
