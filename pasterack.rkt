@@ -28,21 +28,24 @@
 
 (define sample-pastes
   '("4557" ; Sierpinski
-    "9545" ; div1
-    "3516" ; circles (test require)
+ ;   "9545" ; div1
+;    "3516" ; circles (test require)
     "3289" ; Greek letters
     "2531" ; lazy fib
     "7747" ; set bang (test multi-expr, no #lang)
     "2417" ; scribble syntax
     "9425" ; big bang (test 2 requires on 1 line)
-    "8474" ; typed/racket
-    "8937" ; datalog
+;    "8474" ; typed/racket
+;    "8937" ; datalog
     "2979" ; test limits, and forms in racket but not racket/base
-    "7169" ; racket/gui
-    "5352" ; test 2 specs in 1 require
-    "9476" ; another typed/racket
+;    "7169" ; racket/gui
+;    "5352" ; web scrape, test 2 specs in 1 require
+    "7577" ; typed/racket
+    "1679" ; type error
     "6813" ; ffi
-    "5752" ; bs ipsum (as text)
+    "2328" ; checkerboard
+    "2332" ; plot
+;    "5752" ; bs ipsum (as text)
     ))
 
 (define NUM-RECENT-PASTES 32)
@@ -127,7 +130,7 @@
                             "(lambda () (namespace-anchor->namespace anchor)) "
                             "'(racket/pretty file/convertible))]\n"
            "                    [sandbox-path-permissions '([exists \"/\"])]\n"
-           "                    [sandbox-eval-limits '(8 64)])\n"
+           "                    [sandbox-eval-limits '(10 64)])\n"
            "        (let ([e (make-evaluator '" lang ")])\n"
            "            (call-in-sandbox-context e\n"
            "              (lambda ()\n"
@@ -198,7 +201,8 @@
        (div 
         (center
          (img ((src ,racket-logo-url)))
-         (h1 ,(mk-link pastebin-url "PasteRack") ": An evaluating "
+         (h1 ((style "font-family:sans-serif"))
+             ,(mk-link pastebin-url "PasteRack") ": An evaluating "
              ,(mk-link racket-lang-url "Racket") " pastebin.")
          (form ((action ,(embed/url process-paste)) (method "post"))
                (table (tr
@@ -210,8 +214,17 @@
                (td ((style "width:8em"))
                    (input ((type "submit") (value "Submit Paste"))))
                (td (input ((type "checkbox") (name "astext") (value "off")))
-               " Submit as text only"))))))
-         (div ((style "width:10em;position:relative;float:right")))))))
+               " Submit as text only"))))
+         (br)(br)(br)
+         (div ((style "font-size:small;color:#808080"))
+           "Powered by " ,(mk-link racket-lang-url "Racket") ". "
+           "View "
+           ,(mk-link "https://github.com/stchang/pasterack" "source") "."
+           " Report issues or suggestions "
+           ,(mk-link "https://github.com/stchang/pasterack/issues" "here") ".")
+         ))
+         (div ((style "width:10em;position:relative;float:right")))
+         ))))
   (send/suspend/dispatch response-generator))
 
 (define (process-paste request)
@@ -282,20 +295,34 @@
           (script ,(++ "top.document.title=\"Paste" pastenum ":"
                        (bytes->string/utf-8 paste-name) "\"")))
       (body ()
-       (div ((style "margin-left:10px;position:relative;float:left"))
+       (div ((style "position:absolute;left:20px;top:24px"))
+;       (div ((style "margin-left:10px;position:relative;float:left"))
          (table ((cellspacing "0") (cellpadding "0"))
            (tr (td ,(mk-link pastebin-url "PasteRack.org")))
            (tr (td ((height "10px"))))
            (tr (td "Paste # " (a ((href ,paste-url)) ,pastenum)))
            (tr (td ((colspan "3")) (small ,(bytes->string/utf-8 time-str))))))
-       (div ((style "margin-top:-15px") (class "maincolumn"))
-         (h4 ((style "font-family:sans-serif"))
-             ,(bytes->string/utf-8 paste-name))
-         (br)
+       (div ((style "position:absolute;left:12em"))
+;       (div ((style "margin-top:-15px") (class "maincolumn"))
+        ,(let ([name (bytes->string/utf-8 paste-name)])
+            (if (string=? name "") '(br)
+                `(h4 ((style "font-family:sans-serif")) ,name)))
         ,(match code-main-div
-           [`(div ((class "main")) ,ver ,body)
+           [`(div ((class "main")) ,ver
+               (blockquote ((class "SCodeFlow"))
+                 (table ,table-params . ,rows)))
+            (define new-rows
+              (map
+               (lambda (r)
+                 (match r
+                   [`(tr () . ,rst)
+                    `(li (span ((style "font-size:large")) . ,rst))]
+                   [_ r]))
+               rows))
             `(div ((class "main"))
-              ,body
+              (blockquote ((class "SCodeFlow"))
+                 (ol ((start "0")(style "font-size:small;color:#A0A0A0"))
+                   . ,new-rows))
               (p "=>")
               ,(match eval-main-div
                  [`(div ((class "main")) ,ver
