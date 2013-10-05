@@ -175,47 +175,90 @@
       "s.parentNode.insertBefore(ga, s);\n"
       "})();"))
 
-(define (serve-home request)
+;; generate SUBMIT button image
+;; (require images/icons/control)
+;; (require images/icons/style)
+;; (require pict racket/draw)
+;; (send 
+;;  (pict->bitmap
+;;   (cc-superimpose
+;;    (bitmap (record-icon #:color (make-object color% 64 64 255) #:height 64
+;;                         #:material glass-icon-material))
+;;    (bitmap (play-icon #:color light-metal-icon-color #:height 32
+;;                       #:material metal-icon-material))))
+;;  save-file "htdocs/submit.png" 'png)
+
+(define-syntax-rule (~~ prop ...) (string-join (list prop ...) ";"))
+
+;; ----------------------------------------------------------------------------
+;; serve home -----------------------------------------------------------------
+(define (serve-home request #:title [title ""]
+                            #:content [content ""]
+                            #:status [status ""])
   (define (response-generator embed/url)
     (response/xexpr
-     `(html
+     `(html ([style "background-image:url('/plt-back.1024x768.png');"])
+       ;; head ----------------------------------------------------------------
        (head
         (title "PasteRack: An evaluating Racket pastebin.")
-        (script ((type "text/javascript")) ,google-analytics-script))
-       (body ((style "margin-top:20px"))
-         (div ((style "margin-left:5px;position:relative;float:left;margin-right:-10em"))
-           (h4 "Total pastes: " ,(number->string (DBSIZE)))
-           (h4 "Sample pastes:")
-           (table ((style "margin-top:-15px"))
-           ,@(for/list ([pnum sample-pastes])
-               (define name (bytes->string/utf-8 (HGET pnum 'name)))
-               `(tr (td ,(mk-link (mk-paste-url pnum) pnum))
-                    (td ((style "width:1px"))) (td ,name))))
-           (h4 "Recent pastes:")
-           (table ((style "margin-top:-15px"))
-           ,@(reverse
-              (for/list ([pnum recent-pastes] #:when pnum)
-                (define name (bytes->string/utf-8 (HGET pnum 'name)))
-                `(tr (td ,(mk-link (mk-paste-url pnum) pnum))
-                     (td ((style "width:1px"))) (td ,name))))))
-       (div 
-        (center
-         (img ((src ,racket-logo-url)))
-         (h1 ((style "font-family:sans-serif"))
-             ,(mk-link pastebin-url "PasteRack") ": An evaluating "
-             ,(mk-link racket-lang-url "Racket") " pastebin.")
-         (form ((action ,(embed/url process-paste)) (method "post"))
-               (table (tr
-                 (td (input ((type "text") (name "name") (size "60"))))
-                 (td "(paste title)")))
-               (textarea ((rows "32") (cols "80") (name "paste")))
-               (br)
-               (table (tr (td ((style "width:10em")))
-               (td ((style "width:8em"))
-                   (input ((type "submit") (value "Submit Paste"))))
-               (td (input ((type "checkbox") (name "astext") (value "off")))
-               " Submit as text only"))))
+        (script ((type "text/javascript")) ,google-analytics-script)
+        (link ([type "text/css"] [rel "stylesheet"]
+               [href "http://fonts.googleapis.com/css?family=PT+Sans"]))
+        (link ([type "text/css"] [rel "stylesheet"]
+               [href "http://fonts.googleapis.com/css?family=Droid+Sans+Mono"])))
+       ;; body ----------------------------------------------------------------
+       (body ((style "font-family:'PT Sans',sans-serif"))
+        ;; left --------------------------------------------------------------
+        (div ((style ,(~~ "position:absolute;left:1em;top:2em"
+                          "width:12em"
+                          "font-size:95%")))
+          (h4 "Total pastes: " ,(number->string (DBSIZE)))
+          (h4 "Sample pastes:")
+          (table ((style "margin-top:-15px;font-size:95%"))
+                 ,@(for/list ([pnum sample-pastes])
+                     (define name (bytes->string/utf-8 (HGET pnum 'name)))
+                     `(tr (td ,(mk-link (mk-paste-url pnum) pnum))
+                          (td ((style "width:1px"))) (td ,name))))
+          (h4 "Recent pastes:")
+          (table ((style "margin-top:-15px;font-size:95%"))
+                 ,@(reverse
+                    (for/list ([pnum recent-pastes] #:when pnum)
+                      (define name (bytes->string/utf-8 (HGET pnum 'name)))
+                      `(tr (td ,(mk-link (mk-paste-url pnum) pnum))
+                           (td ((style "width:1px"))) (td ,name))))))
+        ;; middle ------------------------------------------------------------
+        (div ((style ,(~~ "position:absolute;left:14em;top:2em")))
+         (center
+          (img ((src ,racket-logo-url)))
+          (h2 ,(mk-link pastebin-url "PasteRack")
+              ": An evaluating pastebin for "
+              ,(mk-link racket-lang-url "Racket") ".")
+          (form ((action ,(embed/url process-paste)) (method "post"))
+            (table (tr
+              (td (input ([type "text"] [name "name"] [size "60"]
+                          [value ,title]
+                          [style ,(~~ "background-color:#FFFFF0"
+                                      "border:inset thin"
+                                      "font-size:105%"
+                                      "font-family:'PT Sans',sans-serif")])))
+              (td ((style "font-size:90%")) "(paste title)")))
+            (textarea ([style ,(~~ "font-family:'Droid Sans Mono',monospace"
+                                   "background-color:#FFFFF0"
+                                   "border:inset"
+                                   "border-width:thin")]
+                          [rows "20"] [cols "80"] [name "paste"]) ,content)
+            (br)
+            (table (tr
+              (td ((style "width:11em")))
+              (td ((style "width:5em"))
+;                  (input ([type "submit"] [value "Submit Paste and Run"])))
+                  (input ([type "image"] [alt "Submit Paste and Run"]
+                          [src "submit.png"])))
+              (td (input ([type "checkbox"] [name "astext"] [value "off"])))
+              (td ((style "font-size:90%")) " Submit as text only"))
+                   (tr (td)(td ,status))))
          (br)(br)(br)
+         ;; bottom ------------------------------------------------------------
          (div ((style "font-size:small;color:#808080"))
            "Powered by " ,(mk-link racket-lang-url "Racket") ". "
            "View "
@@ -223,7 +266,6 @@
            " Report issues or suggestions "
            ,(mk-link "https://github.com/stchang/pasterack/issues" "here") ".")
          ))
-         (div ((style "width:10em;position:relative;float:right")))
          ))))
   (send/suspend/dispatch response-generator))
 
