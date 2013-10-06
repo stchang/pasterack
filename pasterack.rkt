@@ -27,24 +27,24 @@
   (let loop () (define str (mk-rand-str)) (if (EXISTS str) (loop) str)))
 
 (define sample-pastes
-  '("4557" ; Sierpinski
+  '("6711" ; Sierpinski
  ;   "9545" ; div1
 ;    "3516" ; circles (test require)
-    "3289" ; Greek letters
-    "2531" ; lazy fib
-    "7747" ; set bang (test multi-expr, no #lang)
-    "2417" ; scribble syntax
-    "9425" ; big bang (test 2 requires on 1 line)
+    "2872" ; Greek letters
+    "7469" ; lazy fib
+    "6166" ; set bang (test multi-expr, no #lang)
+    "2965" ; scribble syntax
+    "8685" ; big bang (test 2 requires on 1 line)
 ;    "8474" ; typed/racket
 ;    "8937" ; datalog
-    "2979" ; test limits, and forms in racket but not racket/base
+    "6914" ; echo serv, test limits, and forms in racket but not racket/base
 ;    "7169" ; racket/gui
 ;    "5352" ; web scrape, test 2 specs in 1 require
-    "7577" ; typed/racket
-    "1679" ; type error
-    "6813" ; ffi
-    "2328" ; checkerboard
-    "2332" ; plot
+    "6198" ; typed/racket
+    "3211" ; type error
+    "7256" ; ffi
+    "7458" ; checkerboard
+    "7913" ; plot
 ;    "5752" ; bs ipsum (as text)
     ))
 
@@ -194,6 +194,7 @@
 ;; serve home -----------------------------------------------------------------
 (define (serve-home request #:title [title ""]
                             #:content [content ""]
+                            #:fork-from [fork-from ""]
                             #:status [status ""])
   (define (response-generator embed/url)
     (response/xexpr
@@ -247,18 +248,22 @@
                                    "border:inset"
                                    "border-width:thin")]
                           [rows "20"] [cols "80"] [name "paste"]) ,content)
+            (input ([type "hidden"] [name "fork-from"] [value ,fork-from]))
             (br)
             (table (tr
-              (td ((style "width:11em")))
+              (td ((style "width:10em")))
               (td ((style "width:5em"))
 ;                  (input ([type "submit"] [value "Submit Paste and Run"])))
                   (input ([type "image"] [alt "Submit Paste and Run"]
-                          [src "submit.png"])))
+                          [src "/submit.png"])))
               (td (input ([type "checkbox"] [name "astext"] [value "off"])))
               (td ((style "font-size:90%")) " Submit as text only"))
-                   (tr (td)(td ,status))))
+              (tr (td) (td ([colspan "3"]) ,status))
+              (tr (td) (td ([colspan "3"])
+                      ,(if (string=? "" fork-from) ""
+                          `(span "Forked from paste # " ,fork-from))))))
          (br)(br)(br)
-         ;; bottom ------------------------------------------------------------
+         ;; middle bottom (part of middle) ------------------------------------
          (div ((style "font-size:small;color:#808080"))
            "Powered by " ,(mk-link racket-lang-url "Racket") ". "
            "View "
@@ -276,6 +281,7 @@
     (define paste-num (fresh-str))
     (define paste-name (extract-binding/single 'name bs))
     (define pasted-code (extract-binding/single 'paste bs))
+    (define fork-from (extract-binding/single 'fork-from bs))
     (define html-res
       (if (exists-binding? 'astext bs) #f (generate-paste-html pasted-code)))
     (define paste-html-str (or html-res pasted-code))
@@ -283,9 +289,12 @@
     (define paste-url (mk-paste-url paste-num))
     (ring-buffer-push! recent-pastes paste-num)
     (SET/hash paste-num (hash 'name paste-name
-                              'code paste-html-str
-                              'eval (or eval-html-str "")
-                              'time (get-time/iso8601)))
+                              'code pasted-code
+                              'code-html paste-html-str
+                              'eval-html (or eval-html-str "")
+                              'time (get-time/iso8601)
+                              'fork-from fork-from
+                              'views 0))
     (response/xexpr
      `(html ()
         (head ()
@@ -306,6 +315,7 @@
                          (with-input-from-bytes html-bytes read-xml))))))))
 
 (define (serve-paste request pastenum)
+  (when (HEXISTS pastenum 'views) (HINCRBY pastenum 'views 1))
   (define retrieved-paste-hash (GET/hash pastenum #:map-key bytes->symbol))
   (cond
    [(equal? (hash) retrieved-paste-hash)
@@ -315,12 +325,29 @@
          ,(format "Paste # ~a doesn't exist." pastenum) (br)
          ,(mk-link pastebin-url "Go Back"))))]
    [else
-    (match-define
-     (hash-table ('name paste-name) ('code code-html)
-                 ('eval eval-html)  ('time time-str)) retrieved-paste-hash)
+    (define-values (name code code-html eval-html time-str fork-from views)
+      (match retrieved-paste-hash
+        [(hash-table ('name paste-name) ('code code) ('code-html code-html)
+                     ('eval-html eval-html) ('time time-str)
+                     ('fork-from fork-from) ('views views))
+         (values (bytes->string/utf-8 paste-name)
+                 (bytes->string/utf-8 code)
+                 code-html eval-html
+                 (bytes->string/utf-8 time-str)
+                 (bytes->string/utf-8 fork-from)
+                 (bytes->string/utf-8 views))]
+        ;; old record layouts
+        [(hash-table ('name paste-name) ('code code-html)
+                     ('eval eval-html)  ('time time-str))
+         (values (bytes->string/utf-8 paste-name)
+                 "" code-html eval-html
+                 (bytes->string/utf-8 time-str) "" "")]))
     (define code-main-div (get-main-div code-html))
     (define eval-main-div (get-main-div eval-html))
     (define paste-url (string-append paste-url-base pastenum))
+    (serve-home #:content code #:title name #:fork-from pastenum
+    (send/suspend
+      (lambda (home-url)
     (response/xexpr
      `(html ([style "background-image:url('/plt-back.1024x768.png');"])
         (head ()
@@ -338,8 +365,8 @@
           (link ([type "text/css"] [rel "stylesheet"]
                  [href "http://fonts.googleapis.com/css?family=Droid+Sans+Mono"]))
           (script ((src "/scribble-common.js")  (type "text/javascript")))
-          (script ,(++ "top.document.title=\"Paste" pastenum ":"
-                       (bytes->string/utf-8 paste-name) "\"")))
+          (script ,(++ "top.document.title=\"Paste" pastenum ":" name "\""))
+          (script "!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');"))
       (body ([style "font-family:'PT Sans',sans-serif"])
        ;; left ----------------------------------------------------------------
        (div ([style "position:absolute;left:1em;top:2em"])
@@ -347,12 +374,23 @@
            (tr (td ,(mk-link pastebin-url "PasteRack.org")))
            (tr (td ((height "10px"))))
            (tr (td "Paste # " (a ((href ,paste-url)) ,pastenum)))
-           (tr (td ([colspan "3"] [style "font-size:90%"])
-                   ,(bytes->string/utf-8 time-str)))))
+           (tr (td ([colspan "3"] [style "font-size:90%"]) ,time-str))
+           (tr (td ,(if (string=? "" fork-from) ""
+                             `(span (br) "Forked from paste # "
+                             ,(mk-link (++ paste-url-base fork-from) fork-from)
+                               "."))))
+           (tr (td 
+               ,(if (string=? "" code) ""
+                    `(span (br) (a ([href ,home-url]) "Fork") " as a new paste."))))
+           (tr (td ,(if (string=? "" views) ""
+                             `(span (br) "Paste viewed " ,views " time"
+                              ,(if (string=? "1" views) "." "s.")))))
+           (tr (td (br)
+           (a ([href "https://twitter.com/share"][class "twitter-share-button"]
+               [data-via "racketlang"][data-dnt "true"]) "Tweet")))))
        ;; middle --------------------------------------------------------------
        (div ((style "position:absolute;left:14em"))
-        ,(let ([name (bytes->string/utf-8 paste-name)])
-            (if (string=? name "") '(br) `(h4 ,name)))
+        ,(if (string=? name "") '(br) `(h4 ,name))
         ,(match code-main-div
            [`(div ((class "main")) ,ver
                (blockquote ((class "SCodeFlow"))
@@ -420,7 +458,7 @@
                         [x x]))
                     results))))]
                  [_ `(div (pre ,eval-main-div))]))]
-           [_ `(div (pre ,code-main-div))])))))]))
+           [_ `(div (pre ,code-main-div))]))))))) )]))
 
 (define-values (do-dispatch mk-url)
   (dispatch-rules
