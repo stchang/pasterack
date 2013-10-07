@@ -47,7 +47,7 @@
 ;    "5752" ; bs ipsum (as text)
     ))
 
-(define NUM-RECENT-PASTES 32)
+(define NUM-RECENT-PASTES 16)
 (define recent-pastes (empty-ring-buffer NUM-RECENT-PASTES))
 (for ([p sample-pastes]) (ring-buffer-push! recent-pastes p))
 
@@ -78,9 +78,9 @@
       "define default-continuation-prompt-tag"))
 
 ;; returns generated pastenum
-(define (write-codeblock-scrbl-file code)
-  (define tmp-name (mk-rand-str))
-  (define tmp-scrbl-file (build-path tmp-dir (++ tmp-name ".scrbl")))
+(define (write-codeblock-scrbl-file code pastenum)
+;  (define tmp-name (mk-rand-str))
+  (define tmp-scrbl-file (build-path tmp-dir (++ pastenum "code.scrbl")))
   (define-values (lang code-no-lang) (hashlang-split code))
   (define lang-lst
     (cond [(scribble-lang? lang) (list "racket" lang)]
@@ -105,13 +105,13 @@
           "@codeblock|{\n~a}|")
       code))
     #:mode 'text
-    #:exists 'replace)
-  tmp-name)
-(define (write-eval-scrbl-file code)
+    #:exists 'replace))
+;  tmp-name)
+(define (write-eval-scrbl-file code pastenum)
   ; parse out #lang if it's there, otherwise use racket
   (define-values (lang code-no-lang) (hashlang-split code))
-  (define tmp-name (mk-rand-str))
-  (define tmp-scrbl-file (build-path tmp-dir (++ tmp-name ".scrbl")))
+;  (define tmp-name (mk-rand-str))
+  (define tmp-scrbl-file (build-path tmp-dir (++ pastenum "eval.scrbl")))
   (with-output-to-file tmp-scrbl-file
     (lambda ()
       (printf
@@ -137,8 +137,8 @@
            "@interaction[#:eval the-eval\n~a]")
        code-no-lang))
       #:mode 'text
-      #:exists 'replace)
-  tmp-name)
+      #:exists 'replace))
+;  tmp-name)
 
 (define (compile-scrbl-file/get-html name)
   (and
@@ -154,10 +154,12 @@
                (path->string (build-path tmp-dir (++ name ".scrbl")))))
    (with-input-from-file (build-path tmp-dir (++ name ".html")) port->bytes)))
 
-(define (generate-paste-html code)
-  (compile-scrbl-file/get-html (write-codeblock-scrbl-file code)))
-(define (generate-eval-html code)
-  (compile-eval-scrbl-file/get-html (write-eval-scrbl-file code)))
+(define (generate-paste-html code pastenum)
+  (write-codeblock-scrbl-file code pastenum)
+  (compile-scrbl-file/get-html (++ pastenum "code")))
+(define (generate-eval-html code pastenum)
+  (write-eval-scrbl-file code pastenum)
+  (compile-eval-scrbl-file/get-html (++ pastenum "eval")))
 
 (define google-analytics-script
   (++ "var _gaq = _gaq || [];\n"
@@ -280,9 +282,11 @@
     (define pasted-code (extract-binding/single 'paste bs))
     (define fork-from (extract-binding/single 'fork-from bs))
     (define html-res
-      (if (exists-binding? 'astext bs) #f (generate-paste-html pasted-code)))
+      (if (exists-binding? 'astext bs) #f
+          (generate-paste-html pasted-code paste-num)))
     (define paste-html-str (or html-res pasted-code))
-    (define eval-html-str (and html-res (generate-eval-html pasted-code)))
+    (define eval-html-str
+      (and html-res (generate-eval-html pasted-code paste-num)))
     (define paste-url (mk-paste-url paste-num))
     (ring-buffer-push! recent-pastes paste-num)
     (SET/hash paste-num (hash 'name paste-name
@@ -311,6 +315,16 @@
             (xml->xexpr (document-element
                          (with-input-from-bytes html-bytes read-xml))))))))
 
+(define droidsansmono-css/x
+  '(link ([type "text/css"] [rel "stylesheet"]
+          [href "http://fonts.googleapis.com/css?family=Droid+Sans+Mono"])))
+(define scrbl-css/x
+  '(link ([type "text/css"] [rel "stylesheet"]
+          [href "http://pasterack.org/scribble.css"])))
+(define rkt-css/x
+  '(link ([type "text/css"] [rel "stylesheet"]
+          [href "http://pasterack.org/racket.css"])))
+             
 (define (serve-paste request pastenum)
   (when (HEXISTS pastenum 'views) (HINCRBY pastenum 'views 1))
   (define retrieved-paste-hash (GET/hash pastenum #:map-key bytes->symbol))
@@ -342,52 +356,8 @@
     (define code-main-div (get-main-div code-html))
     (define eval-main-div (get-main-div eval-html))
     (define paste-url (string-append paste-url-base pastenum))
-    (serve-home #:content code #:title name #:fork-from pastenum
-    (send/suspend
-      (lambda (home-url)
-    (response/xexpr
-     `(html ([style "background-image:url('/plt-back.1024x768.png');"])
-        (head ()
-          (meta ((content "text-html; charset=utf-8")
-                 (http-equiv "content-type")))
-          (title ,(++ "Paste # " pastenum ": " name))
-          (link ((href "/scribble.css")       (rel "stylesheet")
-                 (title "default")            (type "text/css")))
-          (link ((href "/racket.css")         (rel "stylesheet")
-                 (title "default")            (type "text/css")))
-          (link ((href "/scribble-style.css") (rel "stylesheet")
-                 (title "default")            (type "text/css")))
-          (link ([type "text/css"] [rel "stylesheet"]
-                 [href "http://fonts.googleapis.com/css?family=PT+Sans"]))
-          (link ([type "text/css"] [rel "stylesheet"]
-                 [href "http://fonts.googleapis.com/css?family=Droid+Sans+Mono"]))
-          (script ((src "/scribble-common.js")  (type "text/javascript")))
-          (script "!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');"))
-      (body ([style "font-family:'PT Sans',sans-serif"])
-       ;; left ----------------------------------------------------------------
-       (div ([style "position:absolute;left:1em;top:2em"])
-         (table ([cellspacing "0"] [cellpadding "0"])
-           (tr (td ,(mk-link pastebin-url "PasteRack.org")))
-           (tr (td ((height "10px"))))
-           (tr (td "Paste # " (a ((href ,paste-url)) ,pastenum)))
-           (tr (td ([colspan "3"] [style "font-size:90%"]) ,time-str))
-           (tr (td ,(if (string=? "" fork-from) ""
-                             `(span (br) "Forked from paste # "
-                             ,(mk-link (++ paste-url-base fork-from) fork-from)
-                               "."))))
-           (tr (td 
-               ,(if (string=? "" code) ""
-                    `(span (br) (a ([href ,home-url]) "Fork") " as a new paste."))))
-           (tr (td ,(if (string=? "" views) ""
-                             `(span (br) "Paste viewed " ,views " time"
-                              ,(if (string=? "1" views) "." "s.")))))
-           (tr (td (br)
-           (a ([href "https://twitter.com/share"][class "twitter-share-button"]
-               [data-related "racketlang"][data-dnt "true"]) "Tweet")))))
-       ;; middle --------------------------------------------------------------
-       (div ((style "position:absolute;left:14em"))
-        ,(if (string=? name "") '(br) `(h4 ,name))
-        ,(match code-main-div
+    (define main-html
+      (match code-main-div
            [`(div ((class "main")) ,ver
                (blockquote ((class "SCodeFlow"))
                  (table ,table-params . ,rows)))
@@ -446,7 +416,127 @@
                            (delete-file curr-file-path))
                          `(tr () (td () (p () (img
                             ((alt "image") ,height
-                             (src ,(++ "/" new-file)) ,width)))))]
+                             (src ,(++ "http://pasterack.org/" new-file)) ,width)))))]
+                        ;; nested table
+                        [`(tr () (td () (table ,attrs . ,rows)))
+                         `(tr () (td () (table ([style "font-size:95%"])
+                                               . ,rows)))]
+                        [x x]))
+                    results))))]
+                 [_ `(div (pre ,eval-main-div))]))]
+           [_ `(div (pre ,code-main-div))]))
+    (serve-home #:content code #:title name #:fork-from pastenum
+    (send/suspend
+      (lambda (home-url)
+    (response/xexpr
+     `(html ([style "background-image:url('/plt-back.1024x768.png');"])
+        (head ()
+          (meta ((content "text-html; charset=utf-8")
+                 (http-equiv "content-type")))
+          (title ,(++ "Paste # " pastenum ": " name))
+          (link ((href "/scribble.css")       (rel "stylesheet")
+                 (title "default")            (type "text/css")))
+          (link ((href "/racket.css")         (rel "stylesheet")
+                 (title "default")            (type "text/css")))
+          (link ((href "/scribble-style.css") (rel "stylesheet")
+                 (title "default")            (type "text/css")))
+          (link ([type "text/css"] [rel "stylesheet"]
+                 [href "http://fonts.googleapis.com/css?family=PT+Sans"]))
+          (link ([type "text/css"] [rel "stylesheet"]
+                 [href "http://fonts.googleapis.com/css?family=Droid+Sans+Mono"]))
+          (script ((src "/scribble-common.js")  (type "text/javascript")))
+          (script "!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');"))
+      (body ([style "font-family:'PT Sans',sans-serif"])
+       ;; left ----------------------------------------------------------------
+       (div ([style "position:absolute;left:1em;top:2em"])
+         (table ([cellspacing "0"] [cellpadding "0"])
+           (tr (td ,(mk-link pastebin-url "PasteRack.org")))
+           (tr (td ((height "10px"))))
+           (tr (td "Paste # " (a ((href ,paste-url)) ,pastenum)))
+           (tr (td ([colspan "3"] [style "font-size:90%"]) ,time-str))
+           (tr (td ,(if (string=? "" fork-from) ""
+                             `(span (br) "Forked from paste # "
+                             ,(mk-link (++ paste-url-base fork-from) fork-from)
+                               "."))))
+           (tr (td 
+               ,(if (string=? "" code) ""
+                    `(span (br) (a ([href ,home-url]) "Fork") " as a new paste."))))
+           (tr (td ,(if (string=? "" views) ""
+                             `(span (br) "Paste viewed " ,views " time"
+                              ,(if (string=? "1" views) "." "s.")))))
+           (tr (td (br)
+           (a ([href "https://twitter.com/share"][class "twitter-share-button"]
+               [data-related "racketlang"][data-dnt "true"]) "Tweet")))
+           (tr (td (br) "Embed:"))
+           (tr (td (textarea ([rows "2"][cols "16"])
+                     ,(xexpr->string scrbl-css/x)
+                     ,(xexpr->string rkt-css/x)
+                     ,(xexpr->string droidsansmono-css/x)
+                     ,(xexpr->string main-html))))))
+       ;; middle --------------------------------------------------------------
+       (div ((style "position:absolute;left:14em"))
+        ,(if (string=? name "") '(br) `(h4 ,name))
+        ,main-html
+        #;,(match code-main-div
+           [`(div ((class "main")) ,ver
+               (blockquote ((class "SCodeFlow"))
+                 (table ,table-params . ,rows)))
+            (define new-rows
+              (map
+               (lambda (r)
+                 (match r
+                   [`(tr () (td () . ,rst))
+                    `(li (span ((style "font-family:'Droid Sans Mono',monospace;font-size:125%")) . ,rst))]
+                   [_ r]))
+               rows))
+;            `(div ;((class "main"))
+            `(div ([style "font-family:'Droid Sans Mono',monospace"])
+          ;    (blockquote ;((class "SCodeFlow"))
+                 (ol ((start "0")(style "font-size:70%;color:#A0A0A0"))
+                   . ,new-rows)
+              (p "=>")
+              ,(match eval-main-div
+                 [`(div ((class "main")) ,ver
+                     (blockquote ,attr1 (table ,attr2 . ,results)))
+;                  `(blockquote ,attr1 (table ,attr2 .
+                  `(blockquote (table ([style "font-size:90%"]) .
+                  ,(filter
+                    identity
+                    (map
+                    (lambda (x)
+                      (match x
+                        ;; single-line evaled expr (with ">" prompt), skip
+                        [`(tr () (td () (span ((class "stt")) ">" " ") . ,rst))
+                         #f]
+                        ;; multi-line evaled expr
+                        [`(tr () (td ()
+                            (table ((cellspacing "0")
+                                    (class "RktBlk"))
+                              (tr () (td () (span ((class "stt")) ">" " ")
+                                         . ,rst1)) . ,rst))) #f]
+                        ;; void result, skip
+                        [`(tr () (td () (table ,attr (tr () (td ()))))) #f]
+                        ;; fix filename in image link
+                        [`(tr () (td () (p () (img
+                            ((alt "image") ,height
+                             (src ,filename) ,width)))))
+                         ;; rename file to avoid future clashes
+                         (define rxmatch
+                           (regexp-match #px"^(pict|\\d+)\\_*(\\d+)*\\.png"
+                                         filename))
+                         (unless rxmatch
+                           (error "scribble made non-pict.png ~a" filename))
+                         (match-define (list _ base offset) rxmatch)
+                         (define new-file
+                           (++ pastenum (if offset (++ "_" offset) "") ".png"))
+                         (define curr-file-path (build-path tmp-dir filename))
+                         (define new-file-path (build-path tmp-dir new-file))
+                         (unless (file-exists? new-file-path)
+                           (copy-file curr-file-path new-file-path)
+                           (delete-file curr-file-path))
+                         `(tr () (td () (p () (img
+                            ((alt "image") ,height
+                             (src ,(++ "http://pasterack.org/" new-file)) ,width)))))]
                         ;; nested table
                         [`(tr () (td () (table ,attrs . ,rows)))
                          `(tr () (td () (table ([style "font-size:95%"])
