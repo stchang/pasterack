@@ -19,30 +19,29 @@
 
 (define (mk-paste-url paste-num) (++ paste-url-base paste-num))
 
-;; the top.location breaks out of the current frame
 (define (mk-link url txt)
-  `(a ((href ,url) (onclick ,(++ "top.location.href=\"" url "\""))) ,txt))
+  `(a ((href ,url) #;(onclick ,(++ "top.location.href=\"" url "\""))) ,txt))
 
 (define (fresh-str)
   (let loop () (define str (mk-rand-str)) (if (EXISTS str) (loop) str)))
 
 (define sample-pastes
-  '("6711" ; Sierpinski
+  '("4474" ; Sierpinski
  ;   "9545" ; div1
 ;    "3516" ; circles (test require)
-    "2872" ; Greek letters
+    "2778" ; Greek letters
     "7469" ; lazy fib
     "6166" ; set bang (test multi-expr, no #lang)
     "2965" ; scribble syntax
     "8685" ; big bang (test 2 requires on 1 line)
 ;    "8474" ; typed/racket
 ;    "8937" ; datalog
-    "6914" ; echo serv, test limits, and forms in racket but not racket/base
+    "8565" ; echo serv, test limits, and forms in racket but not racket/base
 ;    "7169" ; racket/gui
 ;    "5352" ; web scrape, test 2 specs in 1 require
     "6198" ; typed/racket
     "3211" ; type error
-    "7256" ; ffi
+    "9364" ; ffi
     "7458" ; checkerboard
     "7913" ; plot
 ;    "5752" ; bs ipsum (as text)
@@ -120,8 +119,6 @@
            "@(require scribble/eval racket/sandbox)\n"
            "@(define-namespace-anchor anchor)\n"
            "@(define the-eval\n"
-           "   (call-with-trusted-sandbox-configuration\n"
-           "    (lambda ()\n"
            "      (parameterize ([sandbox-output 'string]\n"
            "                     [sandbox-error-output 'string]\n"
            "                     [sandbox-propagate-breaks #f]\n"
@@ -129,14 +126,14 @@
                                    "(cons "
                             "(lambda () (namespace-anchor->namespace anchor)) "
                             "'(racket/pretty file/convertible))]\n"
-           "                    [sandbox-path-permissions '([exists \"/\"])]\n"
-           "                    [sandbox-eval-limits '(10 64)])\n"
+           "                    [sandbox-path-permissions '([read \"/\"])]\n"
+           "                    [sandbox-eval-limits '(20 128)])\n"
            "        (let ([e (make-evaluator '" lang ")])\n"
            "            (call-in-sandbox-context e\n"
            "              (lambda ()\n"
            "                (current-print (dynamic-require 'racket/pretty "
                                              "'pretty-print-handler))))\n"
-           "          e)))))\n"
+           "          e)))\n"
            "@interaction[#:eval the-eval\n~a]")
        code-no-lang))
       #:mode 'text
@@ -201,7 +198,7 @@
      `(html ([style "background-image:url('/plt-back.1024x768.png');"])
        ;; head ----------------------------------------------------------------
        (head
-        (title "PasteRack: An evaluating Racket pastebin.")
+        (title "PasteRack: A Racket-evaluating pastebin")
         (script ((type "text/javascript")) ,google-analytics-script)
         (link ([type "text/css"] [rel "stylesheet"]
                [href "http://fonts.googleapis.com/css?family=PT+Sans"]))
@@ -298,7 +295,7 @@
     (response/xexpr
      `(html ()
         (head ()
-          (script () ,(++ "top.location.href=\"" paste-url "\"")))
+          (script () ,(++ "location.href=\"" paste-url "\"")))
         (body ())))]
    [else
     (response/xexpr
@@ -320,7 +317,7 @@
   (cond
    [(equal? (hash) retrieved-paste-hash)
     (response/xexpr
-     `(html() (head ())
+     `(html() (head (title "Paste not found"))
         (body ()
          ,(format "Paste # ~a doesn't exist." pastenum) (br)
          ,(mk-link pastebin-url "Go Back"))))]
@@ -353,7 +350,7 @@
         (head ()
           (meta ((content "text-html; charset=utf-8")
                  (http-equiv "content-type")))
-          (title)
+          (title ,(++ "Paste # " pastenum ": " name))
           (link ((href "/scribble.css")       (rel "stylesheet")
                  (title "default")            (type "text/css")))
           (link ((href "/racket.css")         (rel "stylesheet")
@@ -365,7 +362,6 @@
           (link ([type "text/css"] [rel "stylesheet"]
                  [href "http://fonts.googleapis.com/css?family=Droid+Sans+Mono"]))
           (script ((src "/scribble-common.js")  (type "text/javascript")))
-          (script ,(++ "top.document.title=\"Paste" pastenum ":" name "\""))
           (script "!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');"))
       (body ([style "font-family:'PT Sans',sans-serif"])
        ;; left ----------------------------------------------------------------
@@ -387,7 +383,7 @@
                               ,(if (string=? "1" views) "." "s.")))))
            (tr (td (br)
            (a ([href "https://twitter.com/share"][class "twitter-share-button"]
-               [data-via "racketlang"][data-dnt "true"]) "Tweet")))))
+               [data-related "racketlang"][data-dnt "true"]) "Tweet")))))
        ;; middle --------------------------------------------------------------
        (div ((style "position:absolute;left:14em"))
         ,(if (string=? name "") '(br) `(h4 ,name))
