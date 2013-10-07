@@ -19,8 +19,7 @@
 
 (define (mk-paste-url paste-num) (++ paste-url-base paste-num))
 
-(define (mk-link url txt)
-  `(a ((href ,url) #;(onclick ,(++ "top.location.href=\"" url "\""))) ,txt))
+(define (mk-link url txt) `(a ((href ,url)) ,txt))
 
 (define (fresh-str)
   (let loop () (define str (mk-rand-str)) (if (EXISTS str) (loop) str)))
@@ -173,6 +172,15 @@
       "var s = document.getElementsByTagName('script')[0];"
       "s.parentNode.insertBefore(ga, s);\n"
       "})();"))
+(define twitter-script
+  (++ "!function(d,s,id){"
+      "var js,fjs=d.getElementsByTagName(s)[0],"
+      "p=/^http:/.test(d.location)?'http':'https';"
+      "if(!d.getElementById(id)){"
+      "js=d.createElement(s);js.id=id;"
+      "js.src=p+'://platform.twitter.com/widgets.js';"
+      "fjs.parentNode.insertBefore(js,fjs);}}"
+      "(document, 'script', 'twitter-wjs');"))
 
 ;; generate SUBMIT button image
 ;; (require images/icons/control)
@@ -192,12 +200,14 @@
 ;; ----------------------------------------------------------------------------
 ;; serve home -----------------------------------------------------------------
 (define (serve-home request #:title [title ""]
-                            #:content [content ""]
+                            #:content [content "#lang racket"]
                             #:fork-from [fork-from ""]
                             #:status [status ""])
   (define (response-generator embed/url)
     (response/xexpr
-     `(html ([style "background-image:url('/plt-back.1024x768.png');"])
+     `(html ([style ,(~~ "background-image:url('/plt-back.1024x768.png')"
+                         "background-attachment:fixed"
+                         "background-size:cover")])
        ;; head ----------------------------------------------------------------
        (head
         (title "PasteRack: A Racket-evaluating pastebin")
@@ -234,25 +244,24 @@
               ": An evaluating pastebin for "
               ,(mk-link racket-lang-url "Racket") ".")
           (form ((action ,(embed/url process-paste)) (method "post"))
-            (table (tr
-              (td (input ([type "text"] [name "name"] [size "60"]
-                          [value ,title]
-                          [style ,(~~ "background-color:#FFFFF0"
-                                      "border:inset thin"
-                                      "font-size:105%"
-                                      "font-family:'PT Sans',sans-serif")])))
-              (td ((style "font-size:90%")) "(paste title)")))
+            (div ([style "text-align:left"])
+              (input ([type "text"] [name "name"] [size "60"] [value ,title]
+                      [style ,(~~ "background-color:#FFFFF0"
+                                  "border:inset thin"
+                                  "font-size:105%"
+                                  "font-family:'PT Sans',sans-serif")]))
+              (span ([style "font-size:90%"]) "(paste title)"))
             (textarea ([style ,(~~ "font-family:'Droid Sans Mono',monospace"
                                    "background-color:#FFFFF0"
                                    "border:inset"
-                                   "border-width:thin")]
-                          [rows "20"] [cols "80"] [name "paste"]) ,content)
+                                   "border-width:thin"
+                                   "height:32em" "width:50em")]
+                       [name "paste"]) ,content)
             (input ([type "hidden"] [name "fork-from"] [value ,fork-from]))
             (br)
             (table (tr
               (td ((style "width:10em")))
               (td ((style "width:5em"))
-;                  (input ([type "submit"] [value "Submit Paste and Run"])))
                   (input ([type "image"] [alt "Submit Paste and Run"]
                           [src "/submit.png"])))
               (td (input ([type "checkbox"] [name "astext"] [value "off"])))
@@ -268,7 +277,10 @@
            "View "
            ,(mk-link "https://github.com/stchang/pasterack" "source") "."
            " Report issues or suggestions "
-           ,(mk-link "https://github.com/stchang/pasterack/issues" "here") ".")
+           ,(mk-link "https://github.com/stchang/pasterack/issues" "here") ". "
+            "Inspired by "
+            ,(mk-link "https://github.com/samth/paste.rkt" "paste.rkt") "."
+            )
          ))
          ))))
   (send/suspend/dispatch response-generator))
@@ -370,7 +382,8 @@
                    [_ r]))
                rows))
 ;            `(div ;((class "main"))
-            `(div ([style "font-family:'Droid Sans Mono',monospace"])
+            `(div ([style ,(~~ "font-family:'Droid Sans Mono',monospace"
+                              "background-color:transparent")])
           ;    (blockquote ;((class "SCodeFlow"))
                  (ol ((start "0")(style "font-size:70%;color:#A0A0A0"))
                    . ,new-rows)
@@ -379,7 +392,10 @@
                  [`(div ((class "main")) ,ver
                      (blockquote ,attr1 (table ,attr2 . ,results)))
 ;                  `(blockquote ,attr1 (table ,attr2 .
-                  `(blockquote (table ([style "font-size:90%"]) .
+                  `(blockquote (table ([style ,(~~ "font-size:90%"
+                                                   "table-layout:fixed"
+                                                   "width:100%"
+                                                   "word-wrap:break-word")]) .
                   ,(filter
                     identity
                     (map
@@ -419,7 +435,10 @@
                              (src ,(++ "http://pasterack.org/" new-file)) ,width)))))]
                         ;; nested table
                         [`(tr () (td () (table ,attrs . ,rows)))
-                         `(tr () (td () (table ([style "font-size:95%"])
+                         `(tr () (td () (table ([style ,(~~ "font-size:95%"
+                                                            "table-layout:fixed"
+                                                            "width:100%"
+                                                            "word-wrap:break-word")])
                                                . ,rows)))]
                         [x x]))
                     results))))]
@@ -429,7 +448,9 @@
     (send/suspend
       (lambda (home-url)
     (response/xexpr
-     `(html ([style "background-image:url('/plt-back.1024x768.png');"])
+     `(html ([style ,(~~ "background-image:url('/plt-back.1024x768.png')"
+                         "background-attachment:fixed"
+                         "background-size:cover")])
         (head ()
           (meta ((content "text-html; charset=utf-8")
                  (http-equiv "content-type")))
@@ -445,8 +466,9 @@
           (link ([type "text/css"] [rel "stylesheet"]
                  [href "http://fonts.googleapis.com/css?family=Droid+Sans+Mono"]))
           (script ((src "/scribble-common.js")  (type "text/javascript")))
-          (script "!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');"))
-      (body ([style "font-family:'PT Sans',sans-serif"])
+          (script ,twitter-script))
+      (body ([style ,(~~ "font-family:'PT Sans',sans-serif"
+                         "background-color:transparent")])
        ;; left ----------------------------------------------------------------
        (div ([style "position:absolute;left:1em;top:2em"])
          (table ([cellspacing "0"] [cellpadding "0"])
@@ -476,75 +498,7 @@
        ;; middle --------------------------------------------------------------
        (div ((style "position:absolute;left:14em"))
         ,(if (string=? name "") '(br) `(h4 ,name))
-        ,main-html
-        #;,(match code-main-div
-           [`(div ((class "main")) ,ver
-               (blockquote ((class "SCodeFlow"))
-                 (table ,table-params . ,rows)))
-            (define new-rows
-              (map
-               (lambda (r)
-                 (match r
-                   [`(tr () (td () . ,rst))
-                    `(li (span ((style "font-family:'Droid Sans Mono',monospace;font-size:125%")) . ,rst))]
-                   [_ r]))
-               rows))
-;            `(div ;((class "main"))
-            `(div ([style "font-family:'Droid Sans Mono',monospace"])
-          ;    (blockquote ;((class "SCodeFlow"))
-                 (ol ((start "0")(style "font-size:70%;color:#A0A0A0"))
-                   . ,new-rows)
-              (p "=>")
-              ,(match eval-main-div
-                 [`(div ((class "main")) ,ver
-                     (blockquote ,attr1 (table ,attr2 . ,results)))
-;                  `(blockquote ,attr1 (table ,attr2 .
-                  `(blockquote (table ([style "font-size:90%"]) .
-                  ,(filter
-                    identity
-                    (map
-                    (lambda (x)
-                      (match x
-                        ;; single-line evaled expr (with ">" prompt), skip
-                        [`(tr () (td () (span ((class "stt")) ">" " ") . ,rst))
-                         #f]
-                        ;; multi-line evaled expr
-                        [`(tr () (td ()
-                            (table ((cellspacing "0")
-                                    (class "RktBlk"))
-                              (tr () (td () (span ((class "stt")) ">" " ")
-                                         . ,rst1)) . ,rst))) #f]
-                        ;; void result, skip
-                        [`(tr () (td () (table ,attr (tr () (td ()))))) #f]
-                        ;; fix filename in image link
-                        [`(tr () (td () (p () (img
-                            ((alt "image") ,height
-                             (src ,filename) ,width)))))
-                         ;; rename file to avoid future clashes
-                         (define rxmatch
-                           (regexp-match #px"^(pict|\\d+)\\_*(\\d+)*\\.png"
-                                         filename))
-                         (unless rxmatch
-                           (error "scribble made non-pict.png ~a" filename))
-                         (match-define (list _ base offset) rxmatch)
-                         (define new-file
-                           (++ pastenum (if offset (++ "_" offset) "") ".png"))
-                         (define curr-file-path (build-path tmp-dir filename))
-                         (define new-file-path (build-path tmp-dir new-file))
-                         (unless (file-exists? new-file-path)
-                           (copy-file curr-file-path new-file-path)
-                           (delete-file curr-file-path))
-                         `(tr () (td () (p () (img
-                            ((alt "image") ,height
-                             (src ,(++ "http://pasterack.org/" new-file)) ,width)))))]
-                        ;; nested table
-                        [`(tr () (td () (table ,attrs . ,rows)))
-                         `(tr () (td () (table ([style "font-size:95%"])
-                                               . ,rows)))]
-                        [x x]))
-                    results))))]
-                 [_ `(div (pre ,eval-main-div))]))]
-           [_ `(div (pre ,code-main-div))]))))))) )]))
+        ,main-html)))))) )]))
 
 (define-values (do-dispatch mk-url)
   (dispatch-rules
