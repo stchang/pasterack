@@ -7,6 +7,8 @@
 (require "pasterack-utils.rkt")
 (provide/contract (start (request? . -> . response?)))
 
+(current-redis-connection (connect))
+
 (define-runtime-path htdocs-dir "htdocs")
 (define-runtime-path here ".")
 (define-runtime-path tmp-dir "tmp")
@@ -45,6 +47,11 @@
     "7913" ; plot
 ;    "5752" ; bs ipsum (as text)
     ))
+(define sample-pastes-htmls
+  (for/list ([pnum sample-pastes])
+    (define name (HGET/str pnum 'name))
+    `(tr (td ,(mk-link (mk-paste-url pnum) pnum))
+         (td ((style "width:1px"))) (td ,name))))
 
 (define NUM-RECENT-PASTES 16)
 (define recent-pastes (empty-ring-buffer NUM-RECENT-PASTES))
@@ -140,11 +147,15 @@
 ;  tmp-name)
 
 (define (compile-scrbl-file/get-html name)
+  (define err (open-output-file (build-path tmp-dir (++ name ".err"))))
   (and
-   (system (++ "/home/stchang/pltpkg/racket/bin/scribble --html +m "
-               "--redirect-main " racket-docs-url " "
-               "--dest " (path->string tmp-dir) " "
-               (path->string (build-path tmp-dir (++ name ".scrbl")))))
+   (parameterize ([current-error-port err])
+     (begin0
+       (system (++ "/home/stchang/pltpkg/racket/bin/scribble --html +m "
+                   "--redirect-main " racket-docs-url " "
+                   "--dest " (path->string tmp-dir) " "
+                   (path->string (build-path tmp-dir (++ name ".scrbl")))))
+       (close-output-port err)))
    (with-input-from-file (build-path tmp-dir (++ name ".html")) port->bytes)))
 (define (compile-eval-scrbl-file/get-html name)
   (and
@@ -225,10 +236,7 @@
           (h4 "Total pastes: " ,(number->string (DBSIZE)))
           (h4 "Sample pastes:")
           (table ((style "margin-top:-15px;font-size:95%"))
-                 ,@(for/list ([pnum sample-pastes])
-                     (define name (bytes->string/utf-8 (HGET pnum 'name)))
-                     `(tr (td ,(mk-link (mk-paste-url pnum) pnum))
-                          (td ((style "width:1px"))) (td ,name))))
+                 ,@sample-pastes-htmls)
           (h4 "Recent pastes:")
           (table ((style "margin-top:-15px;font-size:95%"))
                  ,@(reverse
@@ -298,7 +306,15 @@
           (generate-paste-html pasted-code paste-num)))
     (define paste-html-str (or html-res pasted-code))
     (define eval-html-str
-      (and html-res (generate-eval-html pasted-code paste-num)))
+      (if html-res
+          ;; eval only if able to read pasted code
+          (generate-eval-html pasted-code paste-num)
+          ;; if not, use read error as output,
+          ;; unless as-text was explicitly checked
+          (if (exists-binding? 'astext bs) #f
+              (with-input-from-file
+                (build-path tmp-dir (++ paste-num "code.err"))
+                port->string))))
     (define paste-url (mk-paste-url paste-num))
     (ring-buffer-push! recent-pastes paste-num)
     (SET/hash paste-num (hash 'name paste-name
@@ -443,7 +459,10 @@
                         [x x]))
                     results))))]
                  [_ `(div (pre ,eval-main-div))]))]
-           [_ `(div (pre ,code-main-div))]))
+           [_ `(div (pre ,code-main-div)
+                    ,(if (string=? eval-main-div "") ""
+                         `(span (p "=>") (pre ,eval-main-div)))
+                    )]))
     (serve-home #:content code #:title name #:fork-from pastenum
     (send/suspend
       (lambda (home-url)
@@ -506,7 +525,6 @@
    [("pastes" (string-arg)) serve-paste]
    #;[else serve-home]))
 
-(current-redis-connection (connect))
 
 (define (start request) (do-dispatch request))
 
