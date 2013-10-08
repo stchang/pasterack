@@ -3,10 +3,7 @@
 (require web-server/servlet web-server/dispatch)
 (require xml xml/path)
 (require racket/system racket/runtime-path)
-(require (rename-in (prefix-in re: redis)
-                    [re:with-redis-connection with-redis-connection]
-                    [re:bytes->symbol bytes->symbol])
-         data/ring-buffer)
+(require redis data/ring-buffer)
 (require "pasterack-utils.rkt")
 (provide/contract (start (request? . -> . response?)))
 
@@ -26,35 +23,28 @@
 
 (define (fresh-str)
   (with-redis-connection
-   (let loop () (define str (mk-rand-str)) (if (re:EXISTS str) (loop) str))))
+   (let loop () (define str (mk-rand-str)) (if (EXISTS str) (loop) str))))
 
 (define sample-pastes
-  '("4474" ; Sierpinski
- ;   "9545" ; div1
-;    "3516" ; circles (test require)
-    "2778" ; Greek letters
-    "7469" ; lazy fib
-    "6166" ; set bang (test multi-expr, no #lang)
-    "2965" ; scribble syntax
-    "8685" ; big bang (test 2 requires on 1 line)
-;    "8474" ; typed/racket
-;    "8937" ; datalog
-    "8565" ; echo serv, test limits, and forms in racket but not racket/base
-;    "7169" ; racket/gui
-;    "5352" ; web scrape, test 2 specs in 1 require
-    "6198" ; typed/racket
-    "3211" ; type error
-    "9364" ; ffi
-    "7458" ; checkerboard
-    "7913" ; plot
-;    "5752" ; bs ipsum (as text)
-    ))
+  '("8953" ; Sierpinski
+    "5563" ; Greek letters
+    "4837" ; lazy fib
+    "1989" ; set bang (test multi-expr, no #lang)
+    "3259" ; scribble syntax
+    "5238" ; big bang (test 2 requires on 1 line)
+    "3883" ; echo serv, test limits, and forms in racket but not racket/base
+    "7658" ; typed/racket
+    "9269" ; type error
+    "2277" ; checkerboard
+    "5873" ; plot
+    "7489")) ; bad syntax
 (define sample-pastes-htmls
-  (with-redis-connection
-   (for/list ([pnum sample-pastes])
-     (define name (re:HGET/str pnum 'name))
-     `(tr (td ,(mk-link (mk-paste-url pnum) pnum))
-          (td ((style "width:1px"))) (td ,name)))))
+  (let ([ns (with-redis-connection
+             (do-MULTI (for ([p sample-pastes]) (send-cmd 'HGET p 'name))))])
+    (for/list ([name/bytes ns] [pnum sample-pastes])
+      (define name (bytes->string/utf-8 name/bytes))
+      `(tr (td ,(mk-link (mk-paste-url pnum) pnum))
+           (td ((style "width:1px"))) (td ,name)))))
 
 (define NUM-RECENT-PASTES 16)
 (define recent-pastes (empty-ring-buffer NUM-RECENT-PASTES))
@@ -250,18 +240,18 @@
         (div ((style ,(~~ "position:absolute;left:1em;top:2em"
                           "width:12em"
                           "font-size:95%")))
-          (h4 "Total pastes: " ,(number->string (re:DBSIZE)))
+          (h4 "Total pastes: " ,(number->string (DBSIZE)))
           (h4 "Sample pastes:")
           (table ((style "margin-top:-15px;font-size:95%"))
                  ,@sample-pastes-htmls)
           (h4 "Recent pastes:")
-          ,(with-redis-connection
-            `(table ((style "margin-top:-15px;font-size:95%"))
-             ,@(reverse
-                (for/list ([pnum recent-pastes] #:when pnum)
-                  (define name (re:HGET/str pnum 'name))
-                  `(tr (td ,(mk-link (mk-paste-url pnum) pnum))
-                       (td ((style "width:1px"))) (td ,name)))))))
+          (table ((style "margin-top:-15px;font-size:95%"))
+          ,@(reverse
+             (with-redis-connection
+              (for/list ([pnum recent-pastes] #:when pnum)
+                (define name (HGET/str pnum 'name))
+                `(tr (td ,(mk-link (mk-paste-url pnum) pnum))
+                     (td ((style "width:1px"))) (td ,name)))))))
         ;; middle ------------------------------------------------------------
         (div ((style ,(~~ "position:absolute;left:14em;top:2em")))
          (center
@@ -335,13 +325,13 @@
                 port->string))))
     (define paste-url (mk-paste-url paste-num))
     (ring-buffer-push! recent-pastes paste-num)
-    (re:SET/hash paste-num (hash 'name paste-name
-                                 'code pasted-code
-                                 'code-html paste-html-str
-                                 'eval-html (or eval-html-str "")
-                                 'time (get-time/iso8601)
-                                 'fork-from fork-from
-                                 'views 0))
+    (SET/hash paste-num (hash 'name paste-name
+                              'code pasted-code
+                              'code-html paste-html-str
+                              'eval-html (or eval-html-str "")
+                              'time (get-time/iso8601)
+                              'fork-from fork-from
+                              'views 0))
     (response/xexpr
      `(html ()
         (head ()
@@ -374,8 +364,8 @@
 (define (serve-paste request pastenum)
   (define retrieved-paste-hash
     (with-redis-connection
-     (when (re:HEXISTS pastenum 'views) (re:HINCRBY pastenum 'views 1))
-     (re:GET/hash pastenum #:map-key bytes->symbol)))
+     (when (HEXISTS pastenum 'views) (HINCRBY pastenum 'views 1))
+     (GET/hash pastenum #:map-key bytes->symbol)))
   (cond
    [(equal? (hash) retrieved-paste-hash)
     (response/xexpr
