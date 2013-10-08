@@ -4,7 +4,7 @@
 (require xml xml/path)
 (require racket/system racket/runtime-path)
 (require redis data/ring-buffer)
-(require "pasterack-utils.rkt")
+(require "pasterack-utils.rkt" "pasterack-parsing-utils.rkt")
 (provide/contract (start (request? . -> . response?)))
 
 (define-runtime-path htdocs-dir "htdocs")
@@ -50,28 +50,6 @@
 (define recent-pastes (empty-ring-buffer NUM-RECENT-PASTES))
 (for ([p sample-pastes]) (ring-buffer-push! recent-pastes p))
 
-;; lang regexp patterns
-(define hashlang-pat #px"^\\#lang ([\\w/-]+)\\s*(.*)")
-(define weblang-pat #px"^web-server.*")
-(define scribblelang-pat #px"^scribble/.*")
-(define htdplang-pat #px"^htdp/(.*)")
-(define TRlang-pat #px"^typed/racket.*")
-(define require-pat #px"^\\(require (.*)\\)$")
-(define (hashlang? code)
-  (define in (open-input-string code))
-  (begin0 (read-language in (const #f)) (close-input-port in)))
-;; returns two string values, one for lang and one for the rest of the program
-(define (hashlang-split code)
-  (match (regexp-match hashlang-pat code)
-    [(list _ lang rst) (values lang rst)]
-    [_ (values "racket" code)]))
-(define (scribble-lang? lang) (regexp-match scribblelang-pat lang))
-(define (htdp-lang? lang) (regexp-match htdplang-pat lang))
-(define (TR-lang? lang) (regexp-match TRlang-pat lang))
-(define (web-lang? lang) (regexp-match weblang-pat lang))
-(define (require-datum? e) (get-require-spec e))
-(define (get-require-spec e) (regexp-match require-pat (to-string e)))
-
 (define TR-bad-ids
   (++ "#%module-begin with-handlers lambda λ #%top-interaction for for* "
       "define default-continuation-prompt-tag"))
@@ -82,14 +60,7 @@
   (define-values (lang code-no-lang) (hashlang-split code))
   (define lang-lst
     (cond [(scribble-lang? lang) (list "racket" lang)]
-          [(htdp-lang? lang)
-           (match (second (regexp-match htdplang-pat lang))
-             ["bsl"  (list "lang/htdp-beginner")]
-             ["bsl+" (list "lang/htdp-beginner-abbr")]
-             ["isl"  (list "lang/htdp-intermediate")]
-             ["isl+" (list "lang/htdp-intermediate-lambda")]
-             ["asl"  (list "lang/htdp-advanced")]
-             [_ (list "racket")])]
+          [(htdp-lang? lang) (list (htdplang->modulename lang))]
           [(TR-lang? lang) (list)]
           [(web-lang? lang) (list "web-server" "web-server/http")]
           [else (list lang)]))
@@ -124,6 +95,15 @@
   (define tmp-scrbl-file (build-path tmp-dir pnum (++ pnum "eval.scrbl")))
   (with-output-to-file tmp-scrbl-file
     (lambda ()
+      (cond
+       [(htdp-lang? lang)
+        ;; separate code into exprs and other things
+        ;; - exprs get evaled by interaction (ow pictures dont work)
+        ;; - other top-level defs get included in make-module-evaluator
+        ;; because they are not allowed in interactions
+        (define-values (code-defs/checks code-exprs)
+          (partition not-htdp-expr? (string->datums code-no-lang)))
+        (define lang-name (htdplang->modulename lang))
       (printf
        (++ "#lang scribble/manual\n"
            "@(require scribble/eval racket/sandbox)\n"
@@ -138,6 +118,36 @@
                             "'(racket/pretty file/convertible))]\n"
            "                    [sandbox-path-permissions '([read \"/\"])]\n"
            "                    [sandbox-eval-limits '(20 128)])\n"
+           "        (let ([e (make-module-evaluator "
+           "'(module m " lang-name
+           " (require test-engine/racket-tests) "
+           (string-join (map to-string/s code-defs/checks))
+           " (test))"
+           ")])\n"
+           "            (call-in-sandbox-context e\n"
+           "              (lambda ()\n"
+           "                (current-print (dynamic-require 'racket/pretty "
+                                             "'pretty-print-handler))))\n"
+           "          e)))\n"
+           "@interaction[#:eval the-eval\n"
+           (string-join (map to-string/s code-exprs))
+           " (test)]"))]
+       ;; no htdp lang
+       [else
+        (printf
+         (++ "#lang scribble/manual\n"
+             "@(require scribble/eval racket/sandbox)\n"
+             "@(define-namespace-anchor anchor)\n"
+             "@(define the-eval\n"
+             "      (parameterize ([sandbox-output 'string]\n"
+             "                     [sandbox-error-output 'string]\n"
+             "                     [sandbox-propagate-breaks #f]\n"
+             "                     [sandbox-namespace-specs "
+                               "(cons "
+                            "(lambda () (namespace-anchor->namespace anchor)) "
+                            "'(racket/pretty file/convertible))]\n"
+             "                    [sandbox-path-permissions '([read \"/\"])]\n"
+             "                     [sandbox-eval-limits '(20 128)])\n"
            "        (let ([e (make-evaluator '" lang ")])\n"
            "            (call-in-sandbox-context e\n"
            "              (lambda ()\n"
@@ -145,7 +155,7 @@
                                              "'pretty-print-handler))))\n"
            "          e)))\n"
            "@interaction[#:eval the-eval\n~a]")
-       code-no-lang))
+       code-no-lang)]))
       #:mode 'text
       #:exists 'replace))
 
