@@ -5,6 +5,11 @@
 (require racket/system racket/runtime-path)
 (require redis data/ring-buffer)
 (require "pasterack-utils.rkt" "pasterack-parsing-utils.rkt")
+
+;; irc bot
+(require racket-irc/irc/main)
+(require racket/async-channel)
+
 (provide/contract (start (request? . -> . response?)))
 
 (define-runtime-path htdocs-dir "htdocs")
@@ -24,6 +29,13 @@
 (define (fresh-str)
   (with-redis-connection
    (let loop () (define str (mk-rand-str)) (if (EXISTS str) (loop) str))))
+
+;; irc bot
+(define-values (connection ready)
+  (irc-connect "card.freenode.net" 6667 "pasterack" "pasterack" "pasterack.org"))
+(sync ready)
+(define irc-channels '("#racket"))
+(for ([chan irc-channels]) (irc-join-channel connection chan))
 
 (define sample-pastes
   '("8953" ; Sierpinski
@@ -300,14 +312,22 @@
             (input ([type "hidden"] [name "fork-from"] [value ,fork-from]))
             (br)
             (table (tr
-              (td ((style "width:10em")))
+                    ;; paste to irc
+              (td ((style "font-size:90%"))
+                  (input ([type "checkbox"] [name "irc"] [value "off"]))
+                  " Paste to #racket channel")
+              (td ((style "width:10px")))
+              ;; submit button
               (td ((style "width:5em"))
                   (input ([type "image"] [alt "Submit Paste and Run"]
                           [src "/submit.png"])))
+              ;; as-text checkbox
               (td (input ([type "checkbox"] [name "astext"] [value "off"])))
-              (td ((style "font-size:90%")) " Submit as text only"))
-              (tr (td) (td ([colspan "3"]) ,status))
-              (tr (td) (td ([colspan "3"])
+              (td ((style "font-size:90%")) " Submit as text only")
+              (td ((style "width:20px"))))
+              (tr (td) (td ([colspan "4"]) ,status))
+              ;; status message
+              (tr (td) (td ([colspan "4"])
                       ,(if (string=? "" fork-from) ""
                           `(span "Forked from paste # " ,fork-from))))))
          (br)(br)(br)
@@ -356,6 +376,9 @@
                               'time (get-time/iso8601)
                               'fork-from fork-from
                               'views 0))
+    (when (exists-binding? 'irc bs)
+      (for ([c irc-channels]) (irc-send-message connection c
+                                (++ paste-name ": " paste-url))))
     (response/xexpr
      `(html ()
         (head ()
