@@ -36,8 +36,8 @@
     "7658" ; typed/racket
     "9269" ; type error
     "2277" ; checkerboard
-    "5873" ; plot
-    "7489")) ; bad syntax
+    "5873")) ; plot
+;    "7489")) ; bad syntax
 (define sample-pastes-htmls
   (let ([ns (with-redis-connection
              (do-MULTI (for ([p sample-pastes]) (send-cmd 'HGET p 'name))))])
@@ -54,7 +54,7 @@
 (define hashlang-pat #px"^\\#lang ([\\w/-]+)\\s*(.*)")
 (define weblang-pat #px"^web-server.*")
 (define scribblelang-pat #px"^scribble/.*")
-(define htdplang-pat #px"^htdp/.*")
+(define htdplang-pat #px"^htdp/(.*)")
 (define TRlang-pat #px"^typed/racket.*")
 (define require-pat #px"^\\(require (.*)\\)$")
 (define (hashlang? code)
@@ -82,7 +82,14 @@
   (define-values (lang code-no-lang) (hashlang-split code))
   (define lang-lst
     (cond [(scribble-lang? lang) (list "racket" lang)]
-          [(htdp-lang? lang) (list "racket")]
+          [(htdp-lang? lang)
+           (match (second (regexp-match htdplang-pat lang))
+             ["bsl"  (list "lang/htdp-beginner")]
+             ["bsl+" (list "lang/htdp-beginner-abbr")]
+             ["isl"  (list "lang/htdp-intermediate")]
+             ["isl+" (list "lang/htdp-intermediate-lambda")]
+             ["asl"  (list "lang/htdp-advanced")]
+             [_ (list "racket")])]
           [(TR-lang? lang) (list)]
           [(web-lang? lang) (list "web-server" "web-server/http")]
           [else (list lang)]))
@@ -94,12 +101,19 @@
   (with-output-to-file tmp-scrbl-file
     (lambda () (printf
       (++ "#lang scribble/manual\n"
+          "@(require racket/require)\n"
           "@(require (for-label "
-          (if (TR-lang? lang)
-              (++ "(except-in typed/racket " TR-bad-ids ")\n"
-                  "(only-meta-in 0 (only-in typed/racket " TR-bad-ids "))\n")
-              "")
-          (string-join (append lang-lst reqs)) "))\n"
+          (cond
+           [(TR-lang? lang)
+            (++ "(except-in typed/racket " TR-bad-ids ")\n"
+                "(only-meta-in 0 (only-in typed/racket " TR-bad-ids "))\n")]
+            [else ""])
+          (cond
+           [(htdp-lang? lang)
+            (++ (car lang-lst) " (subtract-in (combine-in "
+                (string-join reqs) ") " (car lang-lst) ")")]
+           [else (string-join (append lang-lst reqs))])
+          "))\n"
           "@codeblock|{\n~a}|")
       code))
     #:mode 'text
