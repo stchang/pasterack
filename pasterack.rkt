@@ -3,11 +3,12 @@
 (require web-server/servlet web-server/dispatch)
 (require xml xml/path)
 (require racket/system racket/runtime-path)
-(require redis data/ring-buffer)
+(require (rename-in (prefix-in re: redis)
+                    [re:with-redis-connection with-redis-connection]
+                    [re:bytes->symbol bytes->symbol])
+         data/ring-buffer)
 (require "pasterack-utils.rkt")
 (provide/contract (start (request? . -> . response?)))
-
-(current-redis-connection (connect))
 
 (define-runtime-path htdocs-dir "htdocs")
 (define-runtime-path here ".")
@@ -24,7 +25,8 @@
 (define (mk-link url txt) `(a ((href ,url)) ,txt))
 
 (define (fresh-str)
-  (let loop () (define str (mk-rand-str)) (if (EXISTS str) (loop) str)))
+  (with-redis-connection
+   (let loop () (define str (mk-rand-str)) (if (re:EXISTS str) (loop) str))))
 
 (define sample-pastes
   '("4474" ; Sierpinski
@@ -48,10 +50,11 @@
 ;    "5752" ; bs ipsum (as text)
     ))
 (define sample-pastes-htmls
-  (for/list ([pnum sample-pastes])
-    (define name (HGET/str pnum 'name))
-    `(tr (td ,(mk-link (mk-paste-url pnum) pnum))
-         (td ((style "width:1px"))) (td ,name))))
+  (with-redis-connection
+   (for/list ([pnum sample-pastes])
+     (define name (re:HGET/str pnum 'name))
+     `(tr (td ,(mk-link (mk-paste-url pnum) pnum))
+          (td ((style "width:1px"))) (td ,name)))))
 
 (define NUM-RECENT-PASTES 16)
 (define recent-pastes (empty-ring-buffer NUM-RECENT-PASTES))
@@ -84,9 +87,8 @@
       "define default-continuation-prompt-tag"))
 
 ;; returns generated pastenum
-(define (write-codeblock-scrbl-file code pastenum)
-;  (define tmp-name (mk-rand-str))
-  (define tmp-scrbl-file (build-path tmp-dir (++ pastenum "code.scrbl")))
+(define (write-codeblock-scrbl-file code pnum)
+  (define tmp-scrbl-file (build-path tmp-dir pnum (++ pnum "code.scrbl")))
   (define-values (lang code-no-lang) (hashlang-split code))
   (define lang-lst
     (cond [(scribble-lang? lang) (list "racket" lang)]
@@ -112,12 +114,10 @@
       code))
     #:mode 'text
     #:exists 'replace))
-;  tmp-name)
-(define (write-eval-scrbl-file code pastenum)
+(define (write-eval-scrbl-file code pnum)
   ; parse out #lang if it's there, otherwise use racket
   (define-values (lang code-no-lang) (hashlang-split code))
-;  (define tmp-name (mk-rand-str))
-  (define tmp-scrbl-file (build-path tmp-dir (++ pastenum "eval.scrbl")))
+  (define tmp-scrbl-file (build-path tmp-dir pnum (++ pnum "eval.scrbl")))
   (with-output-to-file tmp-scrbl-file
     (lambda ()
       (printf
@@ -144,32 +144,49 @@
        code-no-lang))
       #:mode 'text
       #:exists 'replace))
-;  tmp-name)
 
-(define (compile-scrbl-file/get-html name)
-  (define err (open-output-file (build-path tmp-dir (++ name ".err"))))
-  (and
-   (parameterize ([current-error-port err])
-     (begin0
-       (system (++ "/home/stchang/pltpkg/racket/bin/scribble --html +m "
-                   "--redirect-main " racket-docs-url " "
-                   "--dest " (path->string tmp-dir) " "
-                   (path->string (build-path tmp-dir (++ name ".scrbl")))))
-       (close-output-port err)))
-   (with-input-from-file (build-path tmp-dir (++ name ".html")) port->bytes)))
-(define (compile-eval-scrbl-file/get-html name)
-  (and
-   (system (++ "/home/stchang/pltpkg/racket/bin/scribble --html "
-               "--dest " (path->string tmp-dir) " "
-               (path->string (build-path tmp-dir (++ name ".scrbl")))))
-   (with-input-from-file (build-path tmp-dir (++ name ".html")) port->bytes)))
+(define (compile-scrbl-file/get-html pnum)
+  (define new-tmpdir (build-path tmp-dir pnum))
+  (define err (open-output-file (build-path new-tmpdir (++ pnum "code.err"))))
+  (define scrbl-file (build-path new-tmpdir (++ pnum "code.scrbl")))
+  (define html-file (build-path new-tmpdir (++ pnum "code.html")))
+  (and (parameterize ([current-error-port err])
+         (begin0 (system (++ "/home/stchang/pltpkg/racket/bin/scribble --html "
+                             "+m --redirect-main " racket-docs-url " "
+                             "--dest " (path->string new-tmpdir) " "
+                             (path->string scrbl-file)))
+                 (close-output-port err)))
+       (with-input-from-file html-file port->bytes)))
+(define (compile-eval-scrbl-file/get-html pnum)
+  (define new-tmpdir (build-path tmp-dir pnum))
+  (define scrbl-file (build-path new-tmpdir (++ pnum "eval.scrbl")))
+  (define html-file (build-path new-tmpdir (++ pnum "eval.html")))
+  (and (system (++ "/home/stchang/pltpkg/racket/bin/scribble --html "
+                   "--dest " (path->string new-tmpdir) " "
+               (path->string scrbl-file)))
+       (with-input-from-file html-file port->bytes)))
+
+;; files/directories layout ---------------------------------------------------
+;; web-server files are in htdocs/
+;; each paste creates a directory tmp/<pastenum>
+;; - scrbl for code is tmp/<pastenum>/<pastenum>code.scrbl
+;; - compiled code is  tmp/<pastenum>/<pastenum>code.html
+;; -- if code scrbl file couldn't be compiled, then error is in
+;;    tmp/<pastenum>/<pastenum>code.err
+;; - scrbl for eval is tmp/<pastenum>/<pastenum>eval.scrbl
+;; - compiled eval is  tmp/<pastenum>/<pastenum>eval.html
+;; -- if eval results in 1 pict: tmp/<pastenum>/pict.png
+;; -- if eval results in n picts: tmp/<pastenum>/pict_1.png through pict_n.png
 
 (define (generate-paste-html code pastenum)
+  (define paste-dir (build-path tmp-dir pastenum))
+  (unless (directory-exists? paste-dir) (make-directory paste-dir))
   (write-codeblock-scrbl-file code pastenum)
-  (compile-scrbl-file/get-html (++ pastenum "code")))
+  (compile-scrbl-file/get-html pastenum))
 (define (generate-eval-html code pastenum)
+  ;; should check that tmp/pastenum dir exists here
   (write-eval-scrbl-file code pastenum)
-  (compile-eval-scrbl-file/get-html (++ pastenum "eval")))
+  (compile-eval-scrbl-file/get-html pastenum))
 
 (define google-analytics-script
   (++ "var _gaq = _gaq || [];\n"
@@ -233,17 +250,18 @@
         (div ((style ,(~~ "position:absolute;left:1em;top:2em"
                           "width:12em"
                           "font-size:95%")))
-          (h4 "Total pastes: " ,(number->string (DBSIZE)))
+          (h4 "Total pastes: " ,(number->string (re:DBSIZE)))
           (h4 "Sample pastes:")
           (table ((style "margin-top:-15px;font-size:95%"))
                  ,@sample-pastes-htmls)
           (h4 "Recent pastes:")
-          (table ((style "margin-top:-15px;font-size:95%"))
-                 ,@(reverse
-                    (for/list ([pnum recent-pastes] #:when pnum)
-                      (define name (bytes->string/utf-8 (HGET pnum 'name)))
-                      `(tr (td ,(mk-link (mk-paste-url pnum) pnum))
-                           (td ((style "width:1px"))) (td ,name))))))
+          ,(with-redis-connection
+            `(table ((style "margin-top:-15px;font-size:95%"))
+             ,@(reverse
+                (for/list ([pnum recent-pastes] #:when pnum)
+                  (define name (re:HGET/str pnum 'name))
+                  `(tr (td ,(mk-link (mk-paste-url pnum) pnum))
+                       (td ((style "width:1px"))) (td ,name)))))))
         ;; middle ------------------------------------------------------------
         (div ((style ,(~~ "position:absolute;left:14em;top:2em")))
          (center
@@ -258,7 +276,7 @@
                                   "border:inset thin"
                                   "font-size:105%"
                                   "font-family:'PT Sans',sans-serif")]))
-              (span ([style "font-size:90%"]) "(paste title)"))
+              (span ([style "font-size:90%"]) " (paste title)"))
             (textarea ([style ,(~~ "font-family:'Droid Sans Mono',monospace"
                                    "background-color:#FFFFF0"
                                    "border:inset"
@@ -313,17 +331,17 @@
           ;; unless as-text was explicitly checked
           (if (exists-binding? 'astext bs) #f
               (with-input-from-file
-                (build-path tmp-dir (++ paste-num "code.err"))
+                (build-path tmp-dir paste-num (++ paste-num "code.err"))
                 port->string))))
     (define paste-url (mk-paste-url paste-num))
     (ring-buffer-push! recent-pastes paste-num)
-    (SET/hash paste-num (hash 'name paste-name
-                              'code pasted-code
-                              'code-html paste-html-str
-                              'eval-html (or eval-html-str "")
-                              'time (get-time/iso8601)
-                              'fork-from fork-from
-                              'views 0))
+    (re:SET/hash paste-num (hash 'name paste-name
+                                 'code pasted-code
+                                 'code-html paste-html-str
+                                 'eval-html (or eval-html-str "")
+                                 'time (get-time/iso8601)
+                                 'fork-from fork-from
+                                 'views 0))
     (response/xexpr
      `(html ()
         (head ()
@@ -354,8 +372,10 @@
           [href "http://pasterack.org/racket.css"])))
              
 (define (serve-paste request pastenum)
-  (when (HEXISTS pastenum 'views) (HINCRBY pastenum 'views 1))
-  (define retrieved-paste-hash (GET/hash pastenum #:map-key bytes->symbol))
+  (define retrieved-paste-hash
+    (with-redis-connection
+     (when (re:HEXISTS pastenum 'views) (re:HINCRBY pastenum 'views 1))
+     (re:GET/hash pastenum #:map-key bytes->symbol)))
   (cond
    [(equal? (hash) retrieved-paste-hash)
     (response/xexpr
@@ -441,8 +461,10 @@
                          (match-define (list _ base offset) rxmatch)
                          (define new-file
                            (++ pastenum (if offset (++ "_" offset) "") ".png"))
-                         (define curr-file-path (build-path tmp-dir filename))
-                         (define new-file-path (build-path tmp-dir new-file))
+                         (define curr-file-path
+                           (build-path tmp-dir pastenum filename))
+                         (define new-file-path
+                           (build-path htdocs-dir new-file))
                          (unless (file-exists? new-file-path)
                            (copy-file curr-file-path new-file-path)
                            (delete-file curr-file-path))
@@ -534,6 +556,6 @@
                #:quit? #f
                #:listen-ip #f
                #:port 8000
-               #:extra-files-paths (list htdocs-dir tmp-dir)
+               #:extra-files-paths (list htdocs-dir)
                #:servlet-path "/"
                #:servlet-regexp #rx".*")
