@@ -1,6 +1,7 @@
 #lang racket
 
-(require web-server/servlet web-server/dispatch)
+(require web-server/servlet web-server/dispatch
+         web-server/http/request-structs)
 (require xml xml/path)
 (require racket/system racket/runtime-path)
 (require redis data/ring-buffer)
@@ -21,6 +22,7 @@
 (define racket-docs-url "http://docs.racket-lang.org/")
 (define racket-lang-url "http://racket-lang.org")
 (define racket-logo-url "http://racket-lang.org/logo.png")
+(define racket-irc-url "https://botbot.me/freenode/racket/")
 
 (define (mk-paste-url paste-num) (++ paste-url-base paste-num))
 
@@ -29,6 +31,10 @@
 (define (fresh-str)
   (with-redis-connection
    (let loop () (define str (mk-rand-str)) (if (EXISTS str) (loop) str))))
+
+;; logging
+(define log-file (build-path tmp-dir "pasterack.log"))
+(define log-port (open-output-file log-file #:mode 'text #:exists 'append))
 
 ;; irc bot
 (define-values (connection ready)
@@ -315,7 +321,9 @@
                     ;; paste to irc
               (td ((style "font-size:90%"))
                   (input ([type "checkbox"] [name "irc"] [value "off"]))
-                  " Paste to #racket channel")
+                  (span " Paste to "
+                       ,(mk-link racket-irc-url "#racket")
+                       " channel"))
               (td ((style "width:10px")))
               ;; submit button
               (td ((style "width:5em"))
@@ -369,16 +377,19 @@
                 port->string))))
     (define paste-url (mk-paste-url paste-num))
     (ring-buffer-push! recent-pastes paste-num)
+    (define tm-str (get-time/iso8601))
     (SET/hash paste-num (hash 'name paste-name
                               'code pasted-code
                               'code-html paste-html-str
                               'eval-html (or eval-html-str "")
-                              'time (get-time/iso8601)
+                              'time tm-str
                               'fork-from fork-from
                               'views 0))
     (when (exists-binding? 'irc bs)
       (for ([c irc-channels]) (irc-send-message connection c
                                 (++ paste-name ": " paste-url))))
+    (fprintf log-port "~a\t~a\t~a\t~a\n"
+             tm-str paste-num paste-name (request-client-ip request))
     (response/xexpr
      `(html ()
         (head ()
