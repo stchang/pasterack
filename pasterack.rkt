@@ -14,7 +14,7 @@
 (provide/contract (start (request? . -> . response?)))
 
 (define-runtime-path htdocs-dir "htdocs")
-(define-runtime-path here ".")
+(define-runtime-path here-dir ".")
 (define-runtime-path tmp-dir "tmp")
 
 (define pastebin-url "http://www.pasterack.org/")
@@ -33,7 +33,7 @@
    (let loop () (define str (mk-rand-str)) (if (EXISTS str) (loop) str))))
 
 ;; logging
-(define log-file (build-path tmp-dir "pasterack.log"))
+(define log-file (build-path here-dir "pasterack.log"))
 (define log-port (open-output-file log-file #:mode 'text #:exists 'append))
 
 ;; irc bot
@@ -111,9 +111,11 @@
   ; parse out #lang if it's there, otherwise use racket
   (define-values (lang code-no-lang) (hashlang-split code))
   (define tmp-scrbl-file (build-path tmp-dir pnum (++ pnum "eval.scrbl")))
+  (define out (current-output-port))
   (with-output-to-file tmp-scrbl-file
     (lambda ()
       (cond
+       ;; htdp lang only --------------------------------------------------
        [(htdp-lang? lang)
         ;; separate code into exprs and other things
         ;; - exprs get evaled by interaction (ow pictures dont work)
@@ -134,7 +136,9 @@
                                    "(cons "
                             "(lambda () (namespace-anchor->namespace anchor)) "
                             "'(racket/pretty file/convertible))]\n"
-           "                    [sandbox-path-permissions '([read \"/\"])]\n"
+           "                    [sandbox-path-permissions "
+                         "'([read \"/home/stchang/racket/pasterack/tmp/\"])]\n"
+;                         "(list (list read ,tmp-dir))]\n"
            "                    [sandbox-eval-limits '(20 128)])\n"
            "        (let ([e (make-module-evaluator "
            "'(module m " lang-name
@@ -150,8 +154,28 @@
            "@interaction[#:eval the-eval\n"
            (string-join (map to-string/s code-exprs))
            " (test)]"))]
-       ;; no htdp lang
+       ;; no htdp lang --------------------------------------------------
        [else
+;; ;        (define module-code (++ "(module m " lang " " code-no-lang ")"))
+;;         (define datums (string->datums code-no-lang))
+;; ;        (define module-datum (with-input-from-string module-code read-syntax))
+;;         ;; (define stxs
+;;         ;;   (syntax-case
+;;         ;;     (parameterize ([current-namespace (make-base-namespace)])
+;;         ;;       (expand module-datum)) ()
+;;         ;;     [(_ mname modpath (mbegin conf e ...)) (syntax->list #'(e ...))]))
+;; ;        (fprintf out "~a\n" stxs)
+;;         (define-values (mod-datums expr-datums)
+;;           (partition (lambda (d) (not-expr-stx? d lang)) datums))
+;;         ;; (define-values (mod-stxs expr-stxs)
+;;         ;;   (partition
+;;         ;;    (lambda (s+d) (not-expr-stx? (car s+d)))
+;;         ;;    (map cons stxs datums)))
+;;         ;; (define mod-datums (map cdr mod-stxs))
+;;         ;; (define expr-datums (map cdr expr-stxs))
+;; ;        (fprintf out "~a\n" (string-join (map to-string/s mod-datums)))
+;; ;        (fprintf out "~a\n" (string-join (map to-string/s expr-datums)))
+;        (display
         (printf
          (++ "#lang scribble/manual\n"
              "@(require scribble/eval racket/sandbox)\n"
@@ -164,9 +188,17 @@
                                "(cons "
                             "(lambda () (namespace-anchor->namespace anchor)) "
                             "'(racket/pretty file/convertible))]\n"
-             "                    [sandbox-path-permissions '([read \"/\"])]\n"
+             "                    [sandbox-path-permissions "
+;                         "'([read \"/\"])]\n"
+                         "'([read \"/home/stchang/racket/pasterack/tmp/\"]"
+                           "[read \"/home/stchang/.racket/\"])]\n"
              "                     [sandbox-eval-limits '(20 128)])\n"
            "        (let ([e (make-evaluator '" lang ")])\n"
+;           "        (let ([e (make-evaluator '(begin" "))])\n"
+           ;; "        (let ([e (make-module-evaluator "
+           ;; "'(module m " lang "\n"
+           ;; (string-join (map to-string/s mod-datums))
+           ;; "))])\n"
            "            (call-in-sandbox-context e\n"
            "              (lambda ()\n"
            "                (current-print (dynamic-require 'racket/pretty "
@@ -174,6 +206,10 @@
            "          e)))\n"
            "@interaction[#:eval the-eval\n~a]")
        code-no-lang)]))
+       ;;     "@interaction[#:eval the-eval\n(void)\n"
+       ;;     (string-join (map to-string/s expr-datums))
+       ;;     "]")
+       ;; )]))
       #:mode 'text
       #:exists 'replace))
 
