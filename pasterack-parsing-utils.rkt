@@ -1,4 +1,5 @@
 #lang racket
+(require syntax/stx)
 (require "pasterack-utils.rkt")
 
 ;; parsing utility functions used by pasterack.org
@@ -57,3 +58,32 @@
 (define (string->datums s)
   (with-handlers ([exn:fail? (lambda () null)])
     (with-input-from-string s (lambda () (for/list ([e (in-port)]) e)))))
+
+;; stx predicates
+(define (not-expr? d [out (current-output-port)])
+  (with-handlers ([exn:fail:syntax? (lambda (e) (displayln (exn-message e)) #t)])
+    (define expanded (expand-to-top-form d))
+    (define hd (and (stx-pair? expanded)
+                    ;; not identifier always means %#app, %#datum, or %#top (?)
+                    ;; ie, an expression?
+                    (identifier? (stx-car expanded))
+                    (stx-car expanded)))
+    (fprintf out "expanded: ~a\n" (syntax->datum expanded))
+    (fprintf out "hd: ~a\n"  hd)
+    (and hd
+         ;; check for begin
+      (or (and (free-identifier=? hd #'begin)
+               (for/and ([s (syntax->list (stx-cdr (expand d)))])
+                 (not-expr? s out)))
+          (and
+           ;; (when (or (free-identifier=? hd #'define-syntaxes)
+           ;;           (free-identifier=? hd #'begin-for-syntax)
+           ;;           (free-identifier=? hd #'#%require))
+           ;;   (eval d))
+           (for/or ([form
+                     (syntax->list
+                      ;; ok to do define-values from interactions prompt
+                      ;; (but set! must be classified same as define-values)
+                      #'(module module* begin-for-syntax
+                       #%provide #%require define-syntaxes))])
+              (free-identifier=? hd form)))))))

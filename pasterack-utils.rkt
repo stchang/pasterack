@@ -2,6 +2,7 @@
 (require racket/date racket/match)
 (provide (all-defined-out))
 
+(define o compose)
 (define ++ string-append)
 (define (to-string d) (format "~a" d))
 (define (to-string/v d) (format "~v" d))
@@ -17,3 +18,9 @@
        #px"(\\d\\d\\d\\d-\\d\\d-\\d\\d)[MTWFS](\\d\\d:\\d\\d:\\d\\d)"
        (date->string (current-date) #t)))
     (++ date " " time)))
+
+;; url utils
+(define (mk-link url txt) `(a ((href ,url)) ,txt))
+
+;; stx utils
+(define (stx->string stx) (to-string/s (syntax->datum stx)))

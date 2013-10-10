@@ -5,7 +5,8 @@
 (require xml xml/path)
 (require racket/system racket/runtime-path)
 (require redis data/ring-buffer)
-(require "pasterack-utils.rkt" "pasterack-parsing-utils.rkt")
+(require "pasterack-utils.rkt" "pasterack-parsing-utils.rkt"
+         "pasterack-test-cases.rkt")
 
 ;; irc bot
 (require racket-irc/irc/main)
@@ -26,7 +27,7 @@
 
 (define (mk-paste-url paste-num) (++ paste-url-base paste-num))
 
-(define (mk-link url txt) `(a ((href ,url)) ,txt))
+;(define (mk-link url txt) `(a ((href ,url)) ,txt))
 
 (define (fresh-str)
   (with-redis-connection
@@ -37,25 +38,23 @@
 (define log-port (open-output-file log-file #:mode 'text #:exists 'append))
 
 ;; irc bot
-(define-values (connection ready)
+(define-values (irc-connection ready)
   (irc-connect "card.freenode.net" 6667 "pasterack" "pasterack" "pasterack.org"))
 (sync ready)
-(define irc-channels '("#racktest"))
-(for ([chan irc-channels]) (irc-join-channel connection chan))
+(define irc-channels '("#racket"))
+(for ([chan irc-channels]) (irc-join-channel irc-connection chan))
 
 (define sample-pastes
   '("8953" ; Sierpinski
     "5563" ; Greek letters
     "4837" ; lazy fib
-    "1989" ; set bang (test multi-expr, no #lang)
     "3259" ; scribble syntax
-    "5238" ; big bang (test 2 requires on 1 line)
+    "8314" ; check-expect
+    "7435" ; #lang htdp/bsl + 2htdp/image
     "3883" ; echo serv, test limits, and forms in racket but not racket/base
     "7658" ; typed/racket
-    "9269" ; type error
-    "2277" ; checkerboard
     "5873")) ; plot
-;    "7489")) ; bad syntax
+
 (define sample-pastes-htmls
   (let ([ns (with-redis-connection
              (do-MULTI (for ([p sample-pastes]) (send-cmd 'HGET p 'name))))])
@@ -66,7 +65,7 @@
 
 (define NUM-RECENT-PASTES 16)
 (define recent-pastes (empty-ring-buffer NUM-RECENT-PASTES))
-(for ([p sample-pastes]) (ring-buffer-push! recent-pastes p))
+(for ([p test-cases]) (ring-buffer-push! recent-pastes p))
 
 (define TR-bad-ids
   (++ "#%module-begin with-handlers lambda λ #%top-interaction for for* "
@@ -137,8 +136,9 @@
                             "(lambda () (namespace-anchor->namespace anchor)) "
                             "'(racket/pretty file/convertible))]\n"
            "                    [sandbox-path-permissions "
-                         "'([read \"/home/stchang/racket/pasterack/tmp/\"])]\n"
-;                         "(list (list read ,tmp-dir))]\n"
+                         "'([read \"/home/stchang/racket/pasterack/tmp/\"]\n"
+                         ;; images seem to need access to the prefs file
+                           "[read \"/home/stchang/.racket/\"])]\n"
            "                    [sandbox-eval-limits '(20 128)])\n"
            "        (let ([e (make-module-evaluator "
            "'(module m " lang-name
@@ -154,29 +154,18 @@
            "@interaction[#:eval the-eval\n"
            (string-join (map to-string/s code-exprs))
            " (test)]"))]
-       ;; no htdp lang --------------------------------------------------
+       ;; non htdp lang --------------------------------------------------
        [else
-;; ;        (define module-code (++ "(module m " lang " " code-no-lang ")"))
-;;         (define datums (string->datums code-no-lang))
-;; ;        (define module-datum (with-input-from-string module-code read-syntax))
-;;         ;; (define stxs
-;;         ;;   (syntax-case
-;;         ;;     (parameterize ([current-namespace (make-base-namespace)])
-;;         ;;       (expand module-datum)) ()
-;;         ;;     [(_ mname modpath (mbegin conf e ...)) (syntax->list #'(e ...))]))
-;; ;        (fprintf out "~a\n" stxs)
-;;         (define-values (mod-datums expr-datums)
-;;           (partition (lambda (d) (not-expr-stx? d lang)) datums))
-;;         ;; (define-values (mod-stxs expr-stxs)
-;;         ;;   (partition
-;;         ;;    (lambda (s+d) (not-expr-stx? (car s+d)))
-;;         ;;    (map cons stxs datums)))
-;;         ;; (define mod-datums (map cdr mod-stxs))
-;;         ;; (define expr-datums (map cdr expr-stxs))
-;; ;        (fprintf out "~a\n" (string-join (map to-string/s mod-datums)))
-;; ;        (fprintf out "~a\n" (string-join (map to-string/s expr-datums)))
-;        (display
-        (printf
+        (define datums (string->datums code-no-lang))
+        (for ([d datums]) (fprintf out "~a\n" d))
+        (define-values (mod-datums expr-datums)
+          (parameterize ([current-namespace (make-base-namespace)])
+            (eval `(require ,(string->symbol lang)))
+            (partition (lambda (d) (not-expr? d out)) datums)))
+;        (fprintf out "~a\n" (string-join (map to-string/s mod-datums)))
+;        (fprintf out "~a\n" (string-join (map to-string/s expr-datums)))
+        (display
+;        (printf
          (++ "#lang scribble/manual\n"
              "@(require scribble/eval racket/sandbox)\n"
              "@(define-namespace-anchor anchor)\n"
@@ -189,27 +178,25 @@
                             "(lambda () (namespace-anchor->namespace anchor)) "
                             "'(racket/pretty file/convertible))]\n"
              "                    [sandbox-path-permissions "
-;                         "'([read \"/\"])]\n"
                          "'([read \"/home/stchang/racket/pasterack/tmp/\"]"
                            "[read \"/home/stchang/.racket/\"])]\n"
              "                     [sandbox-eval-limits '(20 128)])\n"
-           "        (let ([e (make-evaluator '" lang ")])\n"
-;           "        (let ([e (make-evaluator '(begin" "))])\n"
-           ;; "        (let ([e (make-module-evaluator "
-           ;; "'(module m " lang "\n"
-           ;; (string-join (map to-string/s mod-datums))
-           ;; "))])\n"
+;           "        (let ([e (make-evaluator '" lang ")])\n"
+           "        (let ([e (make-module-evaluator "
+           "'(module m " lang "\n"
+           (string-join (map to-string/s mod-datums))
+           "))])\n"
            "            (call-in-sandbox-context e\n"
            "              (lambda ()\n"
            "                (current-print (dynamic-require 'racket/pretty "
                                              "'pretty-print-handler))))\n"
            "          e)))\n"
-           "@interaction[#:eval the-eval\n~a]")
-       code-no-lang)]))
-       ;;     "@interaction[#:eval the-eval\n(void)\n"
-       ;;     (string-join (map to-string/s expr-datums))
-       ;;     "]")
-       ;; )]))
+       ;;     "@interaction[#:eval the-eval\n~a]")
+       ;; code-no-lang)]))
+           "@interaction[#:eval the-eval\n(void)\n"
+           (string-join (map to-string/s expr-datums))
+           "]")
+       )]))
       #:mode 'text
       #:exists 'replace))
 
@@ -430,7 +417,7 @@
     (when (exists-binding? 'irc bs)
       (define nick (extract-binding/single 'nick bs))
       (for ([c irc-channels])
-        (irc-send-message connection c
+        (irc-send-message irc-connection c
           (++ (if (string=? "" nick) "" (++ nick " pasted: "))
               (if (string=? "" paste-name) "" (++ paste-name ", "))
               paste-url))))
@@ -464,7 +451,7 @@
 (define rkt-css/x
   '(link ([type "text/css"] [rel "stylesheet"]
           [href "http://pasterack.org/racket.css"])))
-             
+
 (define (serve-paste request pastenum)
   (define retrieved-paste-hash
     (with-redis-connection
@@ -635,10 +622,39 @@
         ,(if (string=? name "") '(br) `(h4 ,name))
         ,main-html)))))) )]))
 
+(define (serve-tests request)
+  (define test-cases-htmls
+    (let ([ns (with-redis-connection
+               (do-MULTI (for ([p test-cases]) (send-cmd 'HGET p 'name))))])
+      (for/list ([name/bytes ns] [pnum test-cases])
+        (define name (bytes->string/utf-8 name/bytes))
+        `(tr (td ,(mk-link (mk-paste-url pnum) pnum))
+             (td ((style "width:1px"))) (td ,name)))))
+  (response/xexpr
+   `(html ([style ,(~~ "background-image:url('/plt-back.1024x768.png')"
+                       "background-attachment:fixed"
+                       "background-size:cover")])
+      ;; head ----------------------------------------------------------------
+      (head
+       (title "PasteRack: Test Cases")
+       (link ([type "text/css"] [rel "stylesheet"]
+              [href "http://fonts.googleapis.com/css?family=PT+Sans"]))
+       (link ([type "text/css"] [rel "stylesheet"]
+              [href "http://fonts.googleapis.com/css?family=Droid+Sans+Mono"])))
+      ;; body ----------------------------------------------------------------
+      (body ((style "font-family:'PT Sans',sans-serif"))
+            (div ((style ,(~~ "position:absolute;left:1em;top:2em"
+                              "width:20em"
+                              "font-size:95%")))
+                 (h4 "Test Cases:")
+                 (table ((style "margin-top:-15px;font-size:95%"))
+                        ,@test-cases-htmls))))))
+
 (define-values (do-dispatch mk-url)
   (dispatch-rules
    [("") serve-home]
    [("pastes" (string-arg)) serve-paste]
+   [("tests") serve-tests]
    #;[else serve-home]))
 
 
