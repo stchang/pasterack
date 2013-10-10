@@ -40,7 +40,7 @@
 (define-values (connection ready)
   (irc-connect "card.freenode.net" 6667 "pasterack" "pasterack" "pasterack.org"))
 (sync ready)
-(define irc-channels '("#racket"))
+(define irc-channels '("#racktest"))
 (for ([chan irc-channels]) (irc-join-channel connection chan))
 
 (define sample-pastes
@@ -318,24 +318,30 @@
             (input ([type "hidden"] [name "fork-from"] [value ,fork-from]))
             (br)
             (table (tr
-                    ;; paste to irc
-              (td ((style "font-size:90%"))
-                  (input ([type "checkbox"] [name "irc"] [value "off"]))
-                  (span " Paste to "
-                       ,(mk-link racket-irc-url "#racket")
-                       " channel"))
+              (td ((style "width:12em")))
+              ;; as-text checkbox ----------
+              (td (input ([type "checkbox"] [name "astext"] [value "off"])))
+              (td ((style "font-size:90%")) " Submit as text only")
               (td ((style "width:10px")))
-              ;; submit button
+              ;; submit button -------------
               (td ((style "width:5em"))
                   (input ([type "image"] [alt "Submit Paste and Run"]
                           [src "/submit.png"])))
-              ;; as-text checkbox
-              (td (input ([type "checkbox"] [name "astext"] [value "off"])))
-              (td ((style "font-size:90%")) " Submit as text only")
-              (td ((style "width:20px"))))
-              (tr (td) (td ([colspan "4"]) ,status))
+              ;; paste to irc --------------
+              (td ((style "font-size:90%"))
+                  (input ([type "checkbox"] [name "irc"] [value "off"]))
+                  (span " Alert "
+                       ,(mk-link racket-irc-url "#racket")
+                       " channel; your name/nick: ")
+                  (input ([type "text"] [name "nick"] [size "10"]
+                          [style ,(~~ "background-color:#FFFFF0"
+                                      "border:inset thin"
+                                      "font-size:105%"
+                                      "font-family:'PT Sans',sans-serif")])))
+              )
+              (tr (td ([colspan "3"])) (td ([colspan "3"]) ,status))
               ;; status message
-              (tr (td) (td ([colspan "4"])
+              (tr (td ([colspan "3"])) (td ([colspan "3"])
                       ,(if (string=? "" fork-from) ""
                           `(span "Forked from paste # " ,fork-from))))))
          (br)(br)(br)
@@ -386,8 +392,12 @@
                               'fork-from fork-from
                               'views 0))
     (when (exists-binding? 'irc bs)
-      (for ([c irc-channels]) (irc-send-message connection c
-                                (++ paste-name ": " paste-url))))
+      (define nick (extract-binding/single 'nick bs))
+      (for ([c irc-channels])
+        (irc-send-message connection c
+          (++ (if (string=? "" nick) "" (++ nick " pasted: "))
+              (if (string=? "" paste-name) "" (++ paste-name ", "))
+              paste-url))))
     (fprintf log-port "~a\t~a\t~a\t~a\n"
              tm-str paste-num paste-name (request-client-ip request))
     (response/xexpr
