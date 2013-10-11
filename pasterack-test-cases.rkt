@@ -4,6 +4,10 @@
 
 (define test-cases
   '(
+    ;; proper doc linking
+    "2425" ; 2htdp/image image? doc link
+    "3233" ; htdp/bsl image? doc link
+    "6998" ; matrix mult (example of require id, perm, that's also in #lang)
     ;; path permissions
     "7449" ; delete file
     "4749" ; list root

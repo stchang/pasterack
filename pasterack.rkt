@@ -96,11 +96,18 @@
             (++ "(except-in typed/racket " TR-bad-ids ")\n"
                 "(only-meta-in 0 (only-in typed/racket " TR-bad-ids "))\n")]
             [else ""])
+          ;; when required id is also in lang, favor require
           (cond
            [(htdp-lang? lang)
-            (++ (car lang-lst) " (subtract-in (combine-in "
-                (string-join reqs) ") " (car lang-lst) ")")]
-           [else (string-join (append lang-lst reqs))])
+            (++ (string-join reqs) " "
+                "(subtract-in " (car lang-lst)
+                " (combine-in " (string-join reqs) "))")]
+                ;; (car lang-lst) " (subtract-in (combine-in "
+                ;; (string-join reqs) ") " (car lang-lst) ")")]
+;           [else (string-join (append lang-lst reqs))])
+           [else (++ (string-join reqs) " "
+                     "(subtract-in (combine-in " (string-join lang-lst) ")"
+                     " (combine-in " (string-join reqs) "))")])
           "))\n"
           "@codeblock|{\n~a}|")
       code))
