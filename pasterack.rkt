@@ -18,7 +18,8 @@
 (define-runtime-path here-dir ".")
 (define-runtime-path tmp-dir "tmp")
 
-(define pastebin-url "http://162.243.38.241:8000/")
+;(define pastebin-url "http://162.243.38.241:8000/")
+(define pastebin-url "http://pasterack.org/")
 (define paste-url-base (++ pastebin-url "pastes/"))
 (define racket-docs-url "http://docs.racket-lang.org/")
 (define racket-lang-url "http://racket-lang.org")
@@ -41,9 +42,11 @@
 
 ;irc bot
 (define-values (irc-connection ready)
-  (irc-connect "card.freenode.net" 6667 "pasterackm" "pasterackm" "pasterack.org mirror"))
+;  (irc-connect "card.freenode.net" 6667 "pasterackm" "pasterackm" "pasterack.org mirror"))
+  (irc-connect "card.freenode.net" 6667 "pasterack" "pasterack" "pasterack.org"))
 (sync ready)
-(define irc-channels '("#racktest"))
+;(define irc-channels '("#racktest"))
+(define irc-channels '("#racket"))
 (for ([chan irc-channels]) (irc-join-channel irc-connection chan))
 
 (define sample-pastes
@@ -111,9 +114,6 @@
             (++ valid-reqs " "
                 "(subtract-in " (car lang-lst)
                 " (combine-in " valid-reqs "))")]
-                ;; (car lang-lst) " (subtract-in (combine-in "
-                ;; (string-join reqs) ") " (car lang-lst) ")")]
-;           [else (string-join (append lang-lst reqs))])
            [else (++ valid-reqs " "
                      "(subtract-in (combine-in " (string-join lang-lst) ")"
                      " (combine-in " valid-reqs "))")])
@@ -326,17 +326,14 @@
                          "background-size:cover")])
        ;; head ----------------------------------------------------------------
        (head
-        (title "PasteRack (MIRROR): A Racket-evaluating pastebin")
+;        (title "PasteRack (MIRROR): A Racket-evaluating pastebin")
+        (title "PasteRack: A Racket-evaluating pastebin")
         (script ((type "text/javascript")) ,google-analytics-script)
 	,droidsansmono-css/x ,ptsans-css/x
-        ;; (link ([type "text/css"] [rel "stylesheet"]
-        ;;        [href "http://fonts.googleapis.com/css?family=PT+Sans"]))
-        ;; (link ([type "text/css"] [rel "stylesheet"]
-        ;;        [href "http://fonts.googleapis.com/css?family=Droid+Sans+Mono"])
 	)
        ;; body ----------------------------------------------------------------
        (body ((style "font-family:'PT Sans',sans-serif"))
-       (h1 "MIRROR")
+;       (h1 "MIRROR")
         ;; left --------------------------------------------------------------
         (div ((style ,(~~ "position:absolute;left:1em;top:2em"
                           "width:12em"
@@ -605,16 +602,6 @@
           (title ,(++ "Paste # " pastenum ": " name))
 	  ,scrbl-css/x ,rkt-css/x ,scrbl-style-css/x
 	  ,droidsansmono-css/x ,ptsans-css/x
-          ;; (link ((href "/scribble.css")       (rel "stylesheet")
-          ;;        (title "default")            (type "text/css")))
-          ;; (link ((href "/racket.css")         (rel "stylesheet")
-          ;;        (title "default")            (type "text/css")))
-          ;; (link ((href "/scribble-style.css") (rel "stylesheet")
-          ;;        (title "default")            (type "text/css")))
-          ;; (link ([type "text/css"] [rel "stylesheet"]
-          ;;        [href "http://fonts.googleapis.com/css?family=PT+Sans"]))
-          ;; (link ([type "text/css"] [rel "stylesheet"]
-          ;;        [href "http://fonts.googleapis.com/css?family=Droid+Sans+Mono"]))
           (script ((src "/scribble-common.js")  (type "text/javascript")))
           (script ,twitter-script))
       (body ([style ,(~~ "font-family:'PT Sans',sans-serif"
