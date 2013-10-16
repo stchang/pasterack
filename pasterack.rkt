@@ -9,7 +9,7 @@
          "pasterack-test-cases.rkt")
 
 ;; irc bot
-(require racket-irc/irc/main)
+(require irc)
 (require racket/async-channel)
 
 (provide/contract (start (request? . -> . response?)))
@@ -18,12 +18,14 @@
 (define-runtime-path here-dir ".")
 (define-runtime-path tmp-dir "tmp")
 
-(define pastebin-url "http://www.pasterack.org/")
+(define pastebin-url "http://162.243.38.241:8000/")
 (define paste-url-base (++ pastebin-url "pastes/"))
 (define racket-docs-url "http://docs.racket-lang.org/")
 (define racket-lang-url "http://racket-lang.org")
 (define racket-logo-url "http://racket-lang.org/logo.png")
 (define racket-irc-url "https://botbot.me/freenode/racket/")
+
+(define scrbl-exe "/home/stchang/plt/racket/bin/scribble")
 
 (define (mk-paste-url paste-num) (++ paste-url-base paste-num))
 
@@ -37,11 +39,11 @@
 (define log-file (build-path here-dir "pasterack.log"))
 (define log-port (open-output-file log-file #:mode 'text #:exists 'append))
 
-;; irc bot
+;irc bot
 (define-values (irc-connection ready)
-  (irc-connect "card.freenode.net" 6667 "pasterack" "pasterack" "pasterack.org"))
+  (irc-connect "card.freenode.net" 6667 "pasterackm" "pasterackm" "pasterack.org mirror"))
 (sync ready)
-(define irc-channels '("#racket"))
+(define irc-channels '("#racktest"))
 (for ([chan irc-channels]) (irc-join-channel irc-connection chan))
 
 (define sample-pastes
@@ -86,6 +88,13 @@
       (with-input-from-string code-no-lang
         (lambda () (for/list ([e (in-port)] #:when (require-datum? e))
                      (second (get-require-spec e)))))))
+  (define valid-reqs 
+    (string-join 
+     (map to-string/s
+	  (filter 
+	   valid-req? 
+	   (append-map string->datums reqs)))))
+    
   (with-output-to-file tmp-scrbl-file
     (lambda () (printf
       (++ "#lang scribble/manual\n"
@@ -99,15 +108,15 @@
           ;; when required id is also in lang, favor require
           (cond
            [(htdp-lang? lang)
-            (++ (string-join reqs) " "
+            (++ valid-reqs " "
                 "(subtract-in " (car lang-lst)
-                " (combine-in " (string-join reqs) "))")]
+                " (combine-in " valid-reqs "))")]
                 ;; (car lang-lst) " (subtract-in (combine-in "
                 ;; (string-join reqs) ") " (car lang-lst) ")")]
 ;           [else (string-join (append lang-lst reqs))])
-           [else (++ (string-join reqs) " "
+           [else (++ valid-reqs " "
                      "(subtract-in (combine-in " (string-join lang-lst) ")"
-                     " (combine-in " (string-join reqs) "))")])
+                     " (combine-in " valid-reqs "))")])
           "))\n"
           "@codeblock|{\n~a}|")
       code))
@@ -164,7 +173,7 @@
        ;; non htdp lang --------------------------------------------------
        [else
         (define datums (string->datums code-no-lang))
-        (for ([d datums]) (fprintf out "~a\n" d))
+;        (for ([d datums]) (fprintf out "~a\n" d))
         (define-values (mod-datums expr-datums)
           (parameterize ([current-namespace (make-base-namespace)])
             (eval `(require ,(string->symbol lang)))
@@ -213,7 +222,7 @@
   (define scrbl-file (build-path new-tmpdir (++ pnum "code.scrbl")))
   (define html-file (build-path new-tmpdir (++ pnum "code.html")))
   (and (parameterize ([current-error-port err])
-         (begin0 (system (++ "/home/stchang/pltpkg/racket/bin/scribble --html "
+         (begin0 (system (++ scrbl-exe " --html "
                              "+m --redirect-main " racket-docs-url " "
                              "--dest " (path->string new-tmpdir) " "
                              (path->string scrbl-file)))
@@ -223,7 +232,7 @@
   (define new-tmpdir (build-path tmp-dir pnum))
   (define scrbl-file (build-path new-tmpdir (++ pnum "eval.scrbl")))
   (define html-file (build-path new-tmpdir (++ pnum "eval.html")))
-  (and (system (++ "/home/stchang/pltpkg/racket/bin/scribble --html "
+  (and (system (++ scrbl-exe " --html "
                    "--dest " (path->string new-tmpdir) " "
                (path->string scrbl-file)))
        (with-input-from-file html-file port->bytes)))
@@ -272,6 +281,23 @@
       "fjs.parentNode.insertBefore(js,fjs);}}"
       "(document, 'script', 'twitter-wjs');"))
 
+(define droidsansmono-css/x
+  '(link ([type "text/css"] [rel "stylesheet"]
+          [href "http://fonts.googleapis.com/css?family=Droid+Sans+Mono"])))
+(define ptsans-css/x
+  '(link ([type "text/css"] [rel "stylesheet"]
+          [href "http://fonts.googleapis.com/css?family=PT+Sans"])))
+(define scrbl-css/x
+  '(link ([type "text/css"] [rel "stylesheet"]
+          [href "http://pasterack.org/scribble.css"])))
+(define scrbl-style-css/x
+  '(link ([type "text/css"] [rel "stylesheet"]
+          [href "http://pasterack.org/scribble-style.css"])))
+(define rkt-css/x
+  '(link ([type "text/css"] [rel "stylesheet"]
+          [href "http://pasterack.org/racket.css"])))
+
+
 ;; generate SUBMIT button image
 ;; (require images/icons/control)
 ;; (require images/icons/style)
@@ -300,14 +326,17 @@
                          "background-size:cover")])
        ;; head ----------------------------------------------------------------
        (head
-        (title "PasteRack: A Racket-evaluating pastebin")
+        (title "PasteRack (MIRROR): A Racket-evaluating pastebin")
         (script ((type "text/javascript")) ,google-analytics-script)
-        (link ([type "text/css"] [rel "stylesheet"]
-               [href "http://fonts.googleapis.com/css?family=PT+Sans"]))
-        (link ([type "text/css"] [rel "stylesheet"]
-               [href "http://fonts.googleapis.com/css?family=Droid+Sans+Mono"])))
+	,droidsansmono-css/x ,ptsans-css/x
+        ;; (link ([type "text/css"] [rel "stylesheet"]
+        ;;        [href "http://fonts.googleapis.com/css?family=PT+Sans"]))
+        ;; (link ([type "text/css"] [rel "stylesheet"]
+        ;;        [href "http://fonts.googleapis.com/css?family=Droid+Sans+Mono"])
+	)
        ;; body ----------------------------------------------------------------
        (body ((style "font-family:'PT Sans',sans-serif"))
+       (h1 "MIRROR")
         ;; left --------------------------------------------------------------
         (div ((style ,(~~ "position:absolute;left:1em;top:2em"
                           "width:12em"
@@ -449,16 +478,6 @@
             (xml->xexpr (document-element
                          (with-input-from-bytes html-bytes read-xml))))))))
 
-(define droidsansmono-css/x
-  '(link ([type "text/css"] [rel "stylesheet"]
-          [href "http://fonts.googleapis.com/css?family=Droid+Sans+Mono"])))
-(define scrbl-css/x
-  '(link ([type "text/css"] [rel "stylesheet"]
-          [href "http://pasterack.org/scribble.css"])))
-(define rkt-css/x
-  '(link ([type "text/css"] [rel "stylesheet"]
-          [href "http://pasterack.org/racket.css"])))
-
 (define (serve-paste request pastenum)
   (define retrieved-paste-hash
     (with-redis-connection
@@ -558,7 +577,7 @@
                            (delete-file curr-file-path))
                          `(tr () (td () (p () (img
                             ((alt "image") ,height
-                             (src ,(++ "http://pasterack.org/" new-file)) ,width)))))]
+                             (src ,(++ pastebin-url new-file)) ,width)))))]
                         ;; nested table
                         [`(tr () (td () (table ,attrs . ,rows)))
                          `(tr () (td () (table ([style ,(~~ "font-size:95%"
@@ -584,16 +603,18 @@
           (meta ((content "text-html; charset=utf-8")
                  (http-equiv "content-type")))
           (title ,(++ "Paste # " pastenum ": " name))
-          (link ((href "/scribble.css")       (rel "stylesheet")
-                 (title "default")            (type "text/css")))
-          (link ((href "/racket.css")         (rel "stylesheet")
-                 (title "default")            (type "text/css")))
-          (link ((href "/scribble-style.css") (rel "stylesheet")
-                 (title "default")            (type "text/css")))
-          (link ([type "text/css"] [rel "stylesheet"]
-                 [href "http://fonts.googleapis.com/css?family=PT+Sans"]))
-          (link ([type "text/css"] [rel "stylesheet"]
-                 [href "http://fonts.googleapis.com/css?family=Droid+Sans+Mono"]))
+	  ,scrbl-css/x ,rkt-css/x ,scrbl-style-css/x
+	  ,droidsansmono-css/x ,ptsans-css/x
+          ;; (link ((href "/scribble.css")       (rel "stylesheet")
+          ;;        (title "default")            (type "text/css")))
+          ;; (link ((href "/racket.css")         (rel "stylesheet")
+          ;;        (title "default")            (type "text/css")))
+          ;; (link ((href "/scribble-style.css") (rel "stylesheet")
+          ;;        (title "default")            (type "text/css")))
+          ;; (link ([type "text/css"] [rel "stylesheet"]
+          ;;        [href "http://fonts.googleapis.com/css?family=PT+Sans"]))
+          ;; (link ([type "text/css"] [rel "stylesheet"]
+          ;;        [href "http://fonts.googleapis.com/css?family=Droid+Sans+Mono"]))
           (script ((src "/scribble-common.js")  (type "text/javascript")))
           (script ,twitter-script))
       (body ([style ,(~~ "font-family:'PT Sans',sans-serif"

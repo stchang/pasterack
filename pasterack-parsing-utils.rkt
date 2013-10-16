@@ -45,10 +45,25 @@
 (define check-pat #px"^\\(check-(.*)\\)$")
 
 (define (require-datum? e) (get-require-spec e))
-(define (provide-datum? e) (regexp-match provide-pat (to-string e)))
+(define (provide-datum? e) (regexp-match provide-pat (to-string/s e)))
 (define (define-datum? e) (regexp-match define-pat (to-string e)))
 (define (check-datum? e) (regexp-match check-pat (to-string e)))
-(define (get-require-spec e) (regexp-match require-pat (to-string e)))
+(define (get-require-spec e) (regexp-match require-pat (to-string/s e)))
+
+;; for now, only accept certain forms
+;; (ie reject strings)
+(define (valid-req? r) 
+  (or (symbol? r)
+      (and (pair? r)
+	   (let ([form (car r)])
+	     (define (symeq? x) (eq? x form))
+	     (or 
+	      (and (ormap symeq? '(only-in except-in rename-in))
+		   (valid-req? (second r)))
+	      (and (ormap symeq? '(prefix-in))
+		   (valid-req? (third r)))
+	      (and (ormap symeq? '(combine-in))
+		   (andmap valid-req? (cdr r))))))))
 
 (define (not-htdp-expr? e) (or (require-datum? e) (provide-datum? e)
                                (check-datum? e) (define-datum? e)))
@@ -68,8 +83,8 @@
                     ;; ie, an expression?
                     (identifier? (stx-car expanded))
                     (stx-car expanded)))
-    (fprintf out "expanded: ~a\n" (syntax->datum expanded))
-    (fprintf out "hd: ~a\n"  hd)
+    ;; (fprintf out "expanded: ~a\n" (syntax->datum expanded))
+    ;; (fprintf out "hd: ~a\n"  hd)
     (and hd
          ;; check for begin
       (or (and (free-identifier=? hd #'begin)
