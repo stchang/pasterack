@@ -4,6 +4,13 @@
 
 (define test-cases
   '(
+    ;; require tests
+    "7262" ; html-render
+    "5751" ; only-in
+    "9993" ; except-in
+    "8521" ; prefix-in
+    "6777" ; rename-in
+    "4580" ; combine-in
     ;; proper doc linking
     "2425" ; 2htdp/image image? doc link
     "3233" ; htdp/bsl image? doc link

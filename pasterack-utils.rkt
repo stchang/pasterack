@@ -9,7 +9,8 @@
 (define (to-string/s d) (format "~s" d))
 
 (define (mk-rand-str)
-  (bytes->string/utf-8 (list->bytes (for/list ([n 4]) (+ 49 (random 9))))))
+  (number->string (random 10000)))
+;  (bytes->string/utf-8 (list->bytes (for/list ([n 4]) (+ 49 (random 9))))))
 
 (define (get-time/iso8601)
   (parameterize ([date-display-format 'iso-8601])

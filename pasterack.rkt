@@ -26,7 +26,8 @@
 (define racket-logo-url "http://racket-lang.org/logo.png")
 (define racket-irc-url "https://botbot.me/freenode/racket/")
 
-(define scrbl-exe "/home/stchang/plt/racket/bin/scribble")
+;(define scrbl-exe "/home/stchang/plt/racket/bin/scribble")
+(define scrbl-exe "/home/stchang/pltpkg/racket/bin/scribble")
 
 (define (mk-paste-url paste-num) (++ paste-url-base paste-num))
 
@@ -358,7 +359,7 @@
               ": An evaluating pastebin for "
               ,(mk-link racket-lang-url "Racket") ".")
           (form ((action ,(embed/url process-paste)) (method "post"))
-            (div ([style "text-align:left"])
+            (div 
               (input ([type "text"] [name "name"] [size "60"] [value ,title]
                       [style ,(~~ "background-color:#FFFFF0"
                                   "border:inset thin"
