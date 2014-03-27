@@ -509,6 +509,38 @@
     (define code-main-div (get-main-div code-html))
     (define eval-main-div (get-main-div eval-html))
     (define paste-url (string-append paste-url-base pastenum))
+
+    ;; move-image-file: html -> html
+    ;; '(img ((alt "image") ,height (src ,filename) ,width))
+    ;;     =>
+    ;; '(img ((alt "image") ,height (src ,new-filename) ,width))
+    ;; side effect: moves pict file from tmp dir to permanent location in htdocs
+    (define (move-image-file filename height width)
+      ;; rename file to avoid future clashes
+      (define rxmatch
+        (regexp-match #px"^(pict|\\d+)\\_*(\\d+)*\\.png"
+                      filename))
+      (unless rxmatch
+        (error "scribble made non-pict.png ~a" filename))
+      (match-define (list _ base offset) rxmatch)
+      (define new-file
+        (++ pastenum (if offset (++ "_" offset) "") ".png"))
+      (define curr-file-path
+        (build-path tmp-dir pastenum filename))
+      (define new-file-path
+        (build-path htdocs-dir new-file))
+      (unless (file-exists? new-file-path)
+        (copy-file curr-file-path new-file-path)
+        (delete-file curr-file-path))
+      `(img ((alt "image") ,height (src ,(++ pastebin-url new-file)) ,width)))
+    ;; should be a flat list of elems, even for nested lists
+    (define (move-image-files lst)
+      (for/list ([elem lst])
+        (pretty-print elem)
+        (match elem
+          [`(img ((alt "image") ,height (src ,filename) ,width))
+           (move-image-file filename height width)]
+          [x (pretty-print x) x])))
     (define main-html
       (match code-main-div
            [`(div ((class "main")) ,ver
@@ -539,7 +571,7 @@
                                                    "word-wrap:break-word")]) .
                   ,(filter
                     identity
-                    (map
+                    (map ; either rewrites html or produces #f to be filtered
                     (lambda (x)
                       (match x
                         ;; single-line evaled expr (with ">" prompt), skip
@@ -554,28 +586,40 @@
                         ;; void result, skip
                         [`(tr () (td () (table ,attr (tr () (td ()))))) #f]
                         ;; fix filename in image link
-                        [`(tr () (td () (p () (img
-                            ((alt "image") ,height
-                             (src ,filename) ,width)))))
-                         ;; rename file to avoid future clashes
-                         (define rxmatch
-                           (regexp-match #px"^(pict|\\d+)\\_*(\\d+)*\\.png"
-                                         filename))
-                         (unless rxmatch
-                           (error "scribble made non-pict.png ~a" filename))
-                         (match-define (list _ base offset) rxmatch)
-                         (define new-file
-                           (++ pastenum (if offset (++ "_" offset) "") ".png"))
-                         (define curr-file-path
-                           (build-path tmp-dir pastenum filename))
-                         (define new-file-path
-                           (build-path htdocs-dir new-file))
-                         (unless (file-exists? new-file-path)
-                           (copy-file curr-file-path new-file-path)
-                           (delete-file curr-file-path))
-                         `(tr () (td () (p () (img
-                            ((alt "image") ,height
-                             (src ,(++ pastebin-url new-file)) ,width)))))]
+                        [`(tr () (td () (p ()
+                            (img ((alt "image") ,height (src ,filename) ,width)))))
+                         ;; ;; rename file to avoid future clashes
+                         ;; (define rxmatch
+                         ;;   (regexp-match #px"^(pict|\\d+)\\_*(\\d+)*\\.png"
+                         ;;                 filename))
+                         ;; (unless rxmatch
+                         ;;   (error "scribble made non-pict.png ~a" filename))
+                         ;; (match-define (list _ base offset) rxmatch)
+                         ;; (define new-file
+                         ;;   (++ pastenum (if offset (++ "_" offset) "") ".png"))
+                         ;; (define curr-file-path
+                         ;;   (build-path tmp-dir pastenum filename))
+                         ;; (define new-file-path
+                         ;;   (build-path htdocs-dir new-file))
+                         ;; (unless (file-exists? new-file-path)
+                         ;;   (copy-file curr-file-path new-file-path)
+                         ;;   (delete-file curr-file-path))
+                         `(tr () (td () (p ()
+                           ,(move-image-file filename height width))))]
+                            ;;                (img
+                            ;; ((alt "image") ,height
+                            ;;  (src ,(++ pastebin-url new-file)) ,width)))))]
+                        ;; list(s) of images
+                        [`(tr () (td () (p ()
+                            (span ((class "RktRes")) "'(") . ,rst)))
+                         (pretty-print rst)
+                         (pretty-print
+                         `(tr () (td () (p ()
+                            (span ((class "RktRes")) "'(")
+                            ,@(move-image-files rst)))))
+                         `(tr () (td () (p ()
+                            (span ((class "RktRes")) "'(")
+                            ,@(move-image-files rst))))]
                         ;; nested table
                         [`(tr () (td () (table ,attrs . ,rows)))
                          `(tr () (td () (table ([style ,(~~ "font-size:95%"
@@ -583,7 +627,7 @@
                                                             "width:100%"
                                                             "word-wrap:break-word")])
                                                . ,rows)))]
-                        [x x]))
+                        [x (pretty-print x) x]))
                     results))))]
                  [_ `(div (pre ,eval-main-div))]))]
            [_ `(div (pre ,code-main-div)
