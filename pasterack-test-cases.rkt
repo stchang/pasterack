@@ -39,5 +39,7 @@
     "8757" ; out of order defines
     "5795" ; #lang blank
     "4662" ; blank
+    "4126" ; nested list of images
+    "5791"  ; list of images (thanks jrslepak)
     ;; BROKEN: submodule evaluation
     ))
