@@ -536,11 +536,10 @@
     ;; should be a flat list of elems, even for nested lists
     (define (move-image-files lst)
       (for/list ([elem lst])
-        (pretty-print elem)
         (match elem
           [`(img ((alt "image") ,height (src ,filename) ,width))
            (move-image-file filename height width)]
-          [x (pretty-print x) x])))
+          [x x])))
     (define main-html
       (match code-main-div
            [`(div ((class "main")) ,ver
@@ -588,35 +587,13 @@
                         ;; fix filename in image link
                         [`(tr () (td () (p ()
                             (img ((alt "image") ,height (src ,filename) ,width)))))
-                         ;; ;; rename file to avoid future clashes
-                         ;; (define rxmatch
-                         ;;   (regexp-match #px"^(pict|\\d+)\\_*(\\d+)*\\.png"
-                         ;;                 filename))
-                         ;; (unless rxmatch
-                         ;;   (error "scribble made non-pict.png ~a" filename))
-                         ;; (match-define (list _ base offset) rxmatch)
-                         ;; (define new-file
-                         ;;   (++ pastenum (if offset (++ "_" offset) "") ".png"))
-                         ;; (define curr-file-path
-                         ;;   (build-path tmp-dir pastenum filename))
-                         ;; (define new-file-path
-                         ;;   (build-path htdocs-dir new-file))
-                         ;; (unless (file-exists? new-file-path)
-                         ;;   (copy-file curr-file-path new-file-path)
-                         ;;   (delete-file curr-file-path))
+                         ;; renames file to avoid future clashes
+                         ;; and rewrites html with new filename
                          `(tr () (td () (p ()
                            ,(move-image-file filename height width))))]
-                            ;;                (img
-                            ;; ((alt "image") ,height
-                            ;;  (src ,(++ pastebin-url new-file)) ,width)))))]
                         ;; list(s) of images
                         [`(tr () (td () (p ()
                             (span ((class "RktRes")) "'(") . ,rst)))
-                         (pretty-print rst)
-                         (pretty-print
-                         `(tr () (td () (p ()
-                            (span ((class "RktRes")) "'(")
-                            ,@(move-image-files rst)))))
                          `(tr () (td () (p ()
                             (span ((class "RktRes")) "'(")
                             ,@(move-image-files rst))))]
@@ -627,7 +604,7 @@
                                                             "width:100%"
                                                             "word-wrap:break-word")])
                                                . ,rows)))]
-                        [x (pretty-print x) x]))
+                        [x x]))
                     results))))]
                  [_ `(div (pre ,eval-main-div))]))]
            [_ `(div (pre ,code-main-div)
