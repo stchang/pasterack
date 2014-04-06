@@ -76,6 +76,7 @@
 (define TR-bad-ids
   (++ "#%module-begin with-handlers lambda λ #%top-interaction for for* "
       "define default-continuation-prompt-tag"))
+(define plai-bad-ids "#%module-begin provide")
 
 ;; returns generated pastenum
 (define (write-codeblock-scrbl-file code pnum)
@@ -84,7 +85,7 @@
   (define lang-lst
     (cond [(scribble-lang? lang) (list "racket" lang)]
           [(htdp-lang? lang) (list (htdplang->modulename lang))]
-          [(TR-lang? lang) (list)]
+          [(or (TR-lang? lang) (plai-lang? lang)) (list)]
           [(web-lang? lang) (list "web-server" "web-server/http")]
           [else (list lang)]))
   (define reqs   
@@ -108,6 +109,9 @@
            [(TR-lang? lang)
             (++ "(except-in typed/racket " TR-bad-ids ")\n"
                 "(only-meta-in 0 (only-in typed/racket " TR-bad-ids "))\n")]
+           [(plai-lang? lang)
+            (++ "(except-in plai " plai-bad-ids ")\n"
+                "(only-meta-in 0 (only-in plai " plai-bad-ids "))\n")]
             [else ""])
           ;; when required id is also in lang, favor require
           (cond

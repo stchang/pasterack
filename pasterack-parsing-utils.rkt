@@ -12,6 +12,7 @@
 (define scribblelang-pat #px"^scribble/.*")
 (define htdplang-pat #px"^htdp/(.*)")
 (define TRlang-pat #px"^typed/racket.*")
+(define plai-pat #px"^plai.*")
 
 (define (hashlang? code)
   (define in (open-input-string code))
@@ -37,6 +38,7 @@
 (define (htdp-lang? lang) (regexp-match htdplang-pat lang))
 (define (TR-lang? lang) (regexp-match TRlang-pat lang))
 (define (web-lang? lang) (regexp-match weblang-pat lang))
+(define (plai-lang? lang) (regexp-match plai-pat lang))
 
 ;; htdp form patterns
 (define provide-pat #px"^\\(provide (.*)\\)$")

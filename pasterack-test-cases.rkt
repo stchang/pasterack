@@ -40,6 +40,7 @@
     "5795" ; #lang blank
     "4662" ; blank
     "4126" ; nested list of images
-    "5791"  ; list of images (thanks jrslepak)
+    "5791" ; list of images (thanks jrslepak)
+    "5568" ; plai
     ;; BROKEN: submodule evaluation
     ))
