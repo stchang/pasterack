@@ -26,8 +26,7 @@
 (define racket-logo-url "http://racket-lang.org/logo.png")
 (define racket-irc-url "https://botbot.me/freenode/racket/")
 
-;(define scrbl-exe "/home/stchang/plt/racket/bin/scribble")
-(define scrbl-exe "/home/stchang/pltpkg/racket/bin/scribble")
+(define scrbl-exe "/home/stchang/plt601/racket/bin/scribble")
 
 (define (mk-paste-url paste-num) (++ paste-url-base paste-num))
 
@@ -59,7 +58,7 @@
     "7435" ; #lang htdp/bsl + 2htdp/image
     "3883" ; echo serv, test limits, and forms in racket but not racket/base
     "7658" ; typed/racket
-    "5873")) ; plot
+    "97561")) ; plot
 
 (define sample-pastes-htmls
   (let ([ns (with-redis-connection
@@ -75,7 +74,12 @@
 
 (define TR-bad-ids
   (++ "#%module-begin with-handlers lambda λ #%top-interaction for for* "
-      "define default-continuation-prompt-tag"))
+      "define default-continuation-prompt-tag struct case-lambda let-values "
+      "letrec-values for*/product let let* letrec define-struct for*/lists "
+      "for*/hasheqv let/cc do for/and for/sum for/hasheq for/lists for*/and "
+      "for*/hasheq for*/vector for/or for/hasheqv for*/last for*/or for/last "
+      "for*/sum for/first for*/fold for/product for/hash for*/list let/ec "
+      "for/list for/vector for*/hash for/fold for*/first"))
 (define plai-bad-ids "#%module-begin provide")
 
 ;; returns generated pastenum
@@ -159,7 +163,9 @@
            "                    [sandbox-path-permissions "
                          "'([read \"/home/stchang/racket/pasterack/tmp/\"]\n"
                          ;; images seem to need access to the prefs file
-                           "[read \"/home/stchang/.racket/\"])]\n"
+                           "[read \"/home/stchang/.racket/\"]\n"
+                           ;; 2htdp/image performs exists? checks on libpng
+                           "[exists \"/\"])]\n"
            "                    [sandbox-eval-limits '(20 128)])\n"
            "        (let ([e (make-module-evaluator "
            "'(module m " lang-name
@@ -200,7 +206,9 @@
                             "'(racket/pretty file/convertible))]\n"
              "                    [sandbox-path-permissions "
                          "'([read \"/home/stchang/racket/pasterack/tmp/\"]"
-                           "[read \"/home/stchang/.racket/\"])]\n"
+                           "[read \"/home/stchang/.racket/\"]\n"
+                           ;; 2htdp/image performs exists? checks on libpng
+                           "[exists \"/\"])]\n"
              "                     [sandbox-eval-limits '(20 128)])\n"
 ;           "        (let ([e (make-evaluator '" lang ")])\n"
            "        (let ([e (make-module-evaluator "
