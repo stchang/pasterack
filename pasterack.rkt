@@ -43,7 +43,7 @@
 ;irc bot
 (define-values (irc-connection ready)
 ;  (irc-connect "card.freenode.net" 6667 "pasterackm" "pasterackm" "pasterack.org mirror"))
-  (irc-connect "card.freenode.net" 6667 "pasterack" "pasterack" "pasterack.org"))
+  (irc-connect "chat.freenode.net" 6667 "pasterack" "pasterack" "pasterack.org"))
 (sync ready)
 ;(define irc-channels '("#racktest"))
 (define irc-channels '("#racket"))
@@ -699,11 +699,13 @@
                  (table ((style "margin-top:-15px;font-size:95%"))
                         ,@test-cases-htmls))))))
 
+(require "plt-bacon.rkt")
 (define-values (do-dispatch mk-url)
   (dispatch-rules
    [("") serve-home]
    [("pastes" (string-arg)) serve-paste]
    [("tests") serve-tests]
+   [("bacon") serve-bacon]
    #;[else serve-home]))
 
 
