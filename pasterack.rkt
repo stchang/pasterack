@@ -26,7 +26,7 @@
 (define racket-logo-url "http://racket-lang.org/logo.png")
 (define racket-irc-url "https://botbot.me/freenode/racket/")
 
-(define scrbl-exe "/home/stchang/plt601/racket/bin/scribble")
+(define scrbl-exe "/home/stchang/racket611/bin/scribble")
 
 (define (mk-paste-url paste-num) (++ paste-url-base paste-num))
 
@@ -58,7 +58,9 @@
     "7435" ; #lang htdp/bsl + 2htdp/image
     "3883" ; echo serv, test limits, and forms in racket but not racket/base
     "7658" ; typed/racket
-    "97561")) ; plot
+    "97561"; plot
+    "29314"; fish pict
+    ))
 
 (define sample-pastes-htmls
   (let ([ns (with-redis-connection
@@ -527,7 +529,8 @@
     ;;     =>
     ;; '(img ((alt "image") ,height (src ,new-filename) ,width))
     ;; side effect: moves pict file from tmp dir to permanent location in htdocs
-    (define (move-image-file filename height width)
+    (define (move-image-file filename height width
+                             [style '(style "")])
       ;; rename file to avoid future clashes
       (define rxmatch
         (regexp-match #px"^(pict|\\d+)\\_*(\\d+)*\\.png"
@@ -544,11 +547,15 @@
       (unless (file-exists? new-file-path)
         (copy-file curr-file-path new-file-path)
         (delete-file curr-file-path))
-      `(img ((alt "image") ,height (src ,(++ pastebin-url new-file)) ,width)))
+      `(img ((alt "image")
+         ,height (src ,(++ pastebin-url new-file)) ,style ,width)))
     ;; should be a flat list of elems, even for nested lists
     (define (move-image-files lst)
       (for/list ([elem lst])
         (match elem
+          ;; 611 added a "style" field
+          [`(img ((alt "image") ,height (src ,filename) ,style ,width))
+           (move-image-file filename height width style)]
           [`(img ((alt "image") ,height (src ,filename) ,width))
            (move-image-file filename height width)]
           [x x])))
@@ -596,7 +603,18 @@
                                          . ,rst1)) . ,rst))) #f]
                         ;; void result, skip
                         [`(tr () (td () (table ,attr (tr () (td ()))))) #f]
-                        ;; fix filename in image link
+                        ;; rewrite filename in image link (1st case):
+                        ;; html of img output (for pict) has changed (in 611?)
+                        ;; new "style" field added, so handle as separate case
+                        [`(tr () (td () (p ()
+                            (img ((alt "image")
+                              ,height (src ,filename) ,style ,width)))))
+                         ;; renames file to avoid future clashes
+                         ;; and rewrites html with new filename
+                         `(tr () (td () (p ()
+                           ,(move-image-file filename height width style))))]
+                        ;; fix filename in image link (2nd case)
+                        ;; (this was the only case before 611)
                         [`(tr () (td () (p ()
                             (img ((alt "image") ,height (src ,filename) ,width)))))
                          ;; renames file to avoid future clashes

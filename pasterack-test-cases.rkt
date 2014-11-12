@@ -42,5 +42,6 @@
     "4126" ; nested list of images
     "5791" ; list of images (thanks jrslepak)
     "5568" ; plai
+    "29314"; fish pict
     ;; BROKEN: submodule evaluation
     ))
