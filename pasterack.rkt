@@ -28,6 +28,8 @@
 
 (define scrbl-exe "/home/stchang/racket611/bin/scribble")
 
+(define PASTE-TITLE-DISPLAY-LEN 32) ; limit length of displayed title
+
 (define (mk-paste-url paste-num) (++ paste-url-base paste-num))
 
 ;(define (mk-link url txt) `(a ((href ,url)) ,txt))
@@ -363,8 +365,10 @@
              (with-redis-connection
               (for/list ([pnum recent-pastes] #:when pnum)
                 (define name (HGET/str pnum 'name))
+                (define trunc-name
+                  (string-truncate name PASTE-TITLE-DISPLAY-LEN))
                 `(tr (td ,(mk-link (mk-paste-url pnum) pnum))
-                     (td ((style "width:1px"))) (td ,name)))))))
+                     (td ((style "width:1px"))) (td ,trunc-name)))))))
         ;; middle ------------------------------------------------------------
         (div ((style ,(~~ "position:absolute;left:14em;top:2em")))
          (center

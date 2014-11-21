@@ -25,3 +25,12 @@
 
 ;; stx utils
 (define (stx->string stx) (to-string/s (syntax->datum stx)))
+
+
+;; string-truncate : String -> String
+;; Truncates the given str to len-limit chars,
+;; or returns str unchanged if its length is <= len-limit
+(define (string-truncate str len-limit)
+  (if (<= (string-length str) len-limit)
+      str
+      (substring str 0 len-limit)))
