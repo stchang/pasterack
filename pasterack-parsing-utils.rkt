@@ -18,6 +18,10 @@
   (define in (open-input-string code))
   (begin0 (read-language in (lambda () #f)) (close-input-port in)))
 
+;; Returns #t if str has "#lang" somewhere.
+(define (has-hashlang? str)
+  (regexp-match "#lang" str))
+
 ;; ie maps htdp/bsl -> lang/htdp-beginner
 (define (htdplang->modulename lang)
   (match (cadr (regexp-match htdplang-pat lang))

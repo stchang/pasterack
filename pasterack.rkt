@@ -27,6 +27,7 @@
 (define racket-irc-url "https://botbot.me/freenode/racket/")
 
 (define scrbl-exe "/home/stchang/racket611/bin/scribble")
+;(define scrbl-exe "/home/stchang/racket-6.2.0.3/bin/scribble")
 
 (define PASTE-TITLE-DISPLAY-LEN 32) ; limit length of displayed title
 
@@ -44,7 +45,7 @@
 
 ;irc bot
 (define-values (irc-connection ready)
-;  (irc-connect "card.freenode.net" 6667 "pasterackm" "pasterackm" "pasterack.org mirror"))
+;  (irc-connect "chat.freenode.net" 6667 "pasterackm" "pasterackm" "pasterack.org mirror"))
   (irc-connect "chat.freenode.net" 6667 "pasterack" "pasterack" "pasterack.org"))
 (sync ready)
 ;(define irc-channels '("#racktest"))
@@ -376,7 +377,7 @@
           (h2 ,(mk-link pastebin-url "PasteRack")
               ": An evaluating pastebin for "
               ,(mk-link racket-lang-url "Racket") ".")
-          (form ((action ,(embed/url process-paste)) (method "post"))
+          (form ([action ,(embed/url check-paste)] [method "post"])
             (div 
               (input ([type "text"] [name "name"] [size "60"] [value ,title]
                       [style ,(~~ "background-color:#FFFFF0"
@@ -416,9 +417,12 @@
               )
               (tr (td ([colspan "3"])) (td ([colspan "3"]) ,status))
               ;; status message
-              (tr (td ([colspan "3"])) (td ([colspan "3"])
-                      ,(if (string=? "" fork-from) ""
-                          `(span "Forked from paste # " ,fork-from))))))
+              (tr (td ([colspan "3"])) 
+                  (td ([colspan "3"])
+                    ,(if (string=? "" fork-from) ""
+                         `(span "Forked from paste # " 
+                           ,(mk-link 
+                              (++ paste-url-base fork-from) fork-from)))))))
          (br)(br)(br)
          ;; middle bottom (part of middle) ------------------------------------
          (div ((style "font-size:small;color:#808080"))
@@ -433,6 +437,23 @@
          ))
          ))))
   (send/suspend/dispatch response-generator))
+
+(define (check-paste request)
+  (define bs (request-bindings request))
+  (define name (extract-binding/single 'name bs))
+  (define as-text?  (exists-binding? 'astext bs))
+  (define paste-content (extract-binding/single 'paste bs))
+  (define fork-from (extract-binding/single 'fork-from bs))
+  ;; very basic spam filter TODO: move check to client-side?
+  (if (and (not as-text?) ; probably spam
+           (not (has-hashlang? paste-content)))
+      (serve-home request 
+                  #:title name
+                  #:content paste-content
+                  #:fork-from fork-from
+                  #:status '(span "Invalid paste: must include #lang." (br)
+                             "Or check \"text only\" to paste plaintext."))
+      (process-paste request)))
 
 (define (process-paste request)
   (define bs (request-bindings request))
