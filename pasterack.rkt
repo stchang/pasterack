@@ -2,7 +2,7 @@
 
 (require web-server/servlet web-server/dispatch
          web-server/http/request-structs)
-(require xml xml/path)
+(require xml xml/path net/url net/uri-codec json "recaptcha.rkt")
 (require racket/system racket/runtime-path)
 (require redis data/ring-buffer)
 (require "pasterack-utils.rkt" "pasterack-parsing-utils.rkt"
@@ -335,7 +335,8 @@
        (head
 ;        (title "PasteRack (MIRROR): A Racket-evaluating pastebin")
         (title "PasteRack: A Racket-evaluating pastebin")
-        (script ((type "text/javascript")) ,google-analytics-script)
+        (script ([type "text/javascript"]) ,google-analytics-script)
+        (script ([src "https://www.google.com/recaptcha/api.js"]))
 	,droidsansmono-css/x ,ptsans-css/x
 	)
        ;; body ----------------------------------------------------------------
@@ -383,11 +384,7 @@
             (input ([type "hidden"] [name "fork-from"] [value ,fork-from]))
             (br)
             (table (tr
-              (td ((style "width:12em")))
-              ;; as-text checkbox ----------
-              (td (input ([type "checkbox"] [name "astext"] [value "off"])))
-              (td ((style "font-size:90%")) " Submit as text only")
-              (td ((style "width:10px")))
+              (td ((style "width:18em")))
               ;; submit button -------------
               (td ((style "width:5em"))
                   (input ([type "image"] [alt "Submit Paste and Run"]
@@ -396,25 +393,25 @@
               (td ((style "font-size:90%"))
                   (input ([type "checkbox"] [name "irc"] [value "off"]))
                   (span " Alert "
-                       ,(mk-link racket-irc-url "#racket")
-                       " channel; your name/nick: ")
+                       ,(mk-link racket-irc-url "#racket") "; your nick: ")
                   (input ([type "text"] [name "nick"] [size "10"]
                           [style ,(~~ "background-color:#FFFFF0"
                                       "border:inset thin"
                                       "font-size:105%"
-                                      "font-family:'PT Sans',sans-serif")])))
-              )
-              (tr (td ([colspan "3"])) (td ([colspan "3"]) ,status))
-              ;; status message
-              (tr (td ([colspan "3"])) 
-                  (td ([colspan "3"])
-                    ,(if (string=? "" fork-from) ""
-                         `(span "Forked from paste # " 
-                           ,(mk-link 
-                              (++ paste-url-base fork-from) fork-from)))))))
+                                      "font-family:'PT Sans',sans-serif")])))))
+            (span ,status)
+            (br)
+            (span ,(if (string=? "" fork-from) ""
+                       `(span "Forked from paste # " 
+                         ,(mk-link 
+                              (++ paste-url-base fork-from) fork-from))))
+            (br)
+            (div ([class "g-recaptcha"] 
+                  [data-sitekey "6LdM0wYTAAAAAJPls_eNV28XvCRMeaf1cDoAV4Qx"])
+              "To paste as plaintext, check the box:"))
          (br)(br)(br)
          ;; middle bottom (part of middle) ------------------------------------
-         (div ((style "font-size:small;color:#808080"))
+         (div ([style "font-size:small;color:#808080"])
            "Powered by " ,(mk-link racket-lang-url "Racket") ". "
            "View "
            ,(mk-link "https://github.com/stchang/pasterack" "source") "."
@@ -430,9 +427,19 @@
 (define (check-paste request)
   (define bs (request-bindings request))
   (define name (extract-binding/single 'name bs))
-  (define as-text?  (exists-binding? 'astext bs))
+  (define captcha-token (extract-binding/single 'g-recaptcha-response bs))
   (define paste-content (extract-binding/single 'paste bs))
   (define fork-from (extract-binding/single 'fork-from bs))
+  (define-values (status headers captcha-success-in)
+    (http-sendrecv/url 
+      (string->url "https://www.google.com/recaptcha/api/siteverify")
+      #:method "POST"
+      #:data (alist->form-urlencoded
+               (list (cons 'secret RECAPTCHA-SECRET)
+                     (cons 'response captcha-token)
+                     (cons 'remoteip (request-client-ip request))))
+      #:headers '("Content-Type: application/x-www-form-urlencoded")))
+  (define as-text? (hash-ref (read-json captcha-success-in) 'success #f))
   ;; very basic spam filter TODO: move check to client-side?
   (if (and (not as-text?) ; probably spam
            (not (has-hashlang? paste-content)))
@@ -441,10 +448,10 @@
                   #:content paste-content
                   #:fork-from fork-from
                   #:status '(span "Invalid paste: must include #lang." (br)
-                             "Or check \"text only\" to paste plaintext."))
-      (process-paste request)))
+                             "Or check the box to paste as plaintext."))
+      (process-paste request as-text?)))
 
-(define (process-paste request)
+(define (process-paste request [as-text? #f])
   (define bs (request-bindings request))
   (cond
    [(exists-binding? 'paste bs)
@@ -453,8 +460,7 @@
     (define pasted-code (extract-binding/single 'paste bs))
     (define fork-from (extract-binding/single 'fork-from bs))
     (define html-res
-      (if (exists-binding? 'astext bs) #f
-          (generate-paste-html pasted-code paste-num)))
+      (if as-text? #f (generate-paste-html pasted-code paste-num)))
     (define paste-html-str (or html-res pasted-code))
     (define eval-html-str
       (if html-res
@@ -462,7 +468,7 @@
           (generate-eval-html pasted-code paste-num)
           ;; if not, use read error as output,
           ;; unless as-text was explicitly checked
-          (if (exists-binding? 'astext bs) #f
+          (if as-text? #f
               (with-input-from-file
                 (build-path tmp-dir paste-num (++ paste-num "code.err"))
                 port->string))))
