@@ -41,14 +41,11 @@
                 (sync (irc-connect/internal))
                 (join-channels))
               (sleep 60)
-              (loop)))))
-  (printf "conn: ~a\n" current-irc-connection))
+              (loop))))))
 
 (define (join-channels)
-  (printf "join: ~a\n" current-irc-connection)
   (for ([c irc-channels]) (irc-join-channel current-irc-connection c)))
 
 (define (irc-paste msg)
-  (printf "paste: ~a\n" current-irc-connection)
   (for ([c irc-channels]) (irc-send-message current-irc-connection c msg)))
               
