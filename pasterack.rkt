@@ -6,11 +6,7 @@
 (require racket/system racket/runtime-path)
 (require redis data/ring-buffer)
 (require "pasterack-utils.rkt" "pasterack-parsing-utils.rkt"
-         "pasterack-test-cases.rkt")
-
-;; irc bot
-(require irc)
-(require racket/async-channel)
+         "pasterack-test-cases.rkt" "irc-bot.rkt")
 
 (provide/contract (start (request? . -> . response?)))
 
@@ -43,14 +39,7 @@
 (define log-file (build-path here-dir "pasterack.log"))
 (define log-port (open-output-file log-file #:mode 'text #:exists 'append))
 
-;irc bot
-(define-values (irc-connection ready)
-;  (irc-connect "chat.freenode.net" 6667 "pasterackm" "pasterackm" "pasterack.org mirror"))
-  (irc-connect "chat.freenode.net" 6667 "pasterack" "pasterack" "pasterack.org"))
-(sync ready)
-;(define irc-channels '("#racktest"))
-(define irc-channels '("#racket"))
-(for ([chan irc-channels]) (irc-join-channel irc-connection chan))
+(pasterack-irc-connect)
 
 (define sample-pastes
   '("8953" ; Sierpinski
@@ -489,11 +478,9 @@
                               'views 0))
     (when (exists-binding? 'irc bs)
       (define nick (extract-binding/single 'nick bs))
-      (for ([c irc-channels])
-        (irc-send-message irc-connection c
-          (++ (if (string=? "" nick) "" (++ nick " pasted: "))
-              (if (string=? "" paste-name) "" (++ paste-name ", "))
-              paste-url))))
+      (irc-paste (++ (if (string=? "" nick) "" (++ nick " pasted: "))
+                     (if (string=? "" paste-name) "" (++ paste-name ", "))
+                     paste-url)))
     (fprintf log-port "~a\t~a\t~a\t~a\n"
              tm-str paste-num paste-name (request-client-ip request))
     (response/xexpr
