@@ -489,11 +489,7 @@
                      paste-url)))
     (fprintf log-port "~a\t~a\t~a\t~a\n"
              tm-str paste-num paste-name (request-client-ip request))
-    (response/xexpr
-     `(html ()
-        (head ()
-          (script () ,(++ "location.href=\"" paste-url "\"")))
-        (body ())))]
+    (redirect-to paste-url permanently)]
    [else
     (response/xexpr
      `(html ()
