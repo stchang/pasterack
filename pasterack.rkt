@@ -2,7 +2,8 @@
 
 (require web-server/servlet web-server/dispatch
          web-server/http/request-structs)
-(require xml xml/path net/url net/uri-codec json "recaptcha.rkt")
+(require xml xml/path net/url net/uri-codec json "recaptcha.rkt"
+         "spam.rkt")
 (require racket/system racket/runtime-path)
 (require redis data/ring-buffer)
 (require "pasterack-utils.rkt" "pasterack-parsing-utils.rkt"
@@ -441,7 +442,9 @@
       #:headers '("Content-Type: application/x-www-form-urlencoded")))
   (define as-text? (hash-ref (read-json captcha-success-in) 'success #f))
   ;; very basic spam filter TODO: move check to client-side?
-  (if (and (not as-text?) ; probably spam
+  (if (and ;; probably spam
+           (or (not as-text?)
+               (check-ip (request-client-ip request)))
            (not (has-hashlang? paste-content)))
       (serve-home request 
                   #:title name
