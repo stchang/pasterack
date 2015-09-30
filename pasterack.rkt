@@ -289,6 +289,11 @@
       "fjs.parentNode.insertBefore(js,fjs);}}"
       "(document, 'script', 'twitter-wjs');"))
 
+(define codemirror-script
+  "var codeMirror = CodeMirror.fromTextArea(document.getElementById(\"paste\"),\
+     { lineNumbers : true, matchBrackets : true, theme: \"neat\" }
+   );")
+
 (define droidsansmono-css/x
   '(link ([type "text/css"] [rel "stylesheet"]
           [href "http://fonts.googleapis.com/css?family=Droid+Sans+Mono"])))
@@ -339,6 +344,14 @@
         (script ([type "text/javascript"]) ,google-analytics-script)
         (script ([src "https://www.google.com/recaptcha/api.js"]))
 	,droidsansmono-css/x ,ptsans-css/x
+        ;; expects a codemirror.js script and its scheme mode in htdocs
+        (script ([src "/codemirror.js"] [type "text/javascript"]))
+        (link ((rel "stylesheet") (href "/codemirror.css")))
+        (link ((rel "stylesheet") (href "/neat.css")))
+        (style ,(string-append ".CodeMirror { text-align: left; background: #FFFFF0;"
+                               " font-size: 15px; height: 35em;"
+                               " font-family: Droid Sans Mono, monospace;"
+                               " border: thin gray inset; width: 50em; }"))
 	)
        ;; body ----------------------------------------------------------------
        (body ((style "font-family:'PT Sans',sans-serif"))
@@ -376,12 +389,10 @@
                                   "font-size:105%"
                                   "font-family:'PT Sans',sans-serif")]))
               (span ([style "font-size:90%"]) " (paste title)"))
-            (textarea ([style ,(~~ "font-family:'Droid Sans Mono',monospace"
-                                   "background-color:#FFFFF0"
-                                   "border:inset"
-                                   "border-width:thin"
-                                   "height:32em" "width:50em")]
-                       [name "paste"]) ,content)
+            (br)
+            (textarea ([id "paste"] [name "paste"]) ,content)
+            ;; run script after textarea is evaluated
+            (script ([type "text/javascript"]) ,codemirror-script)
             (input ([type "hidden"] [name "fork-from"] [value ,fork-from]))
             (br)
             (table (tr
