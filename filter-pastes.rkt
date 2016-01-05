@@ -16,6 +16,7 @@
 ; deletes pastes satisfying the given regexp pattern
 (define (delete-pastes/pat pat #:trial? [trial? #f])
   (define count 0)
+  (define ci-pat (pregexp (string-append "(?i:" pat ")")))
   (printf "searching for pastes with pattern: ~a" pat)
   (when trial? (printf " (trial)"))
   (printf "\n")
@@ -23,7 +24,7 @@
     (when (and (string=? (TYPE k) "hash") (HEXISTS k 'code)) ; valid paste
       (define paste-contents (HGET/str k 'code))
       (define paste-dir (build-path "tmp" (bytes->path k)))
-      (when (regexp-match pat paste-contents)
+      (when (regexp-match ci-pat paste-contents)
         (printf "deleting paste: ~a\n" k)
 ;        (displayln paste-contents)
         (when (directory-exists? paste-dir)
@@ -35,29 +36,34 @@
         (set! count (add1 count)))))
   (printf "deleted ~a pastes matching pattern ~a\n" count pat))
 
-(define pats
-  '("[Aa]mex"
-    "[Vv]isa"
-    "[Mm]astercard"
-    "[Dd]iscover"
+(define default-pats
+  '("amex"
+    "visa"
+    "mastercard"
+    "discover"
     "rapidgator"
     "turbobit"
-    "[Bb]itcoin"
-    "[Pp]ay[Pp]al"
+    "bitcoin"
+    "paypal"
     "Western Union"
     "Money Gram"
-    "[Ww][Mm][Zz]"
-    "[Cc][Vv][Vv]"
+    "wmz"
+    "cvv"
     "Web Money"
-    "Perfect Money"))
+    "Perfect Money"
+    "torrent"
+    "hacked"
+    "accounts"
+    "premium"))
 
 (module+ main
-  (define args (current-command-line-arguments))
-  (cond
-    [(= 1 (vector-length args))
-     (define pat (vector-ref args 0))
-     (delete-pastes/pat pat)]
-    [else
-     (displayln "no args, using default")
-     (for ([p pats])
-       (delete-pastes/pat p))]))
+  (define trial-mode (make-parameter #t))
+  (define pats
+    (command-line
+     #:once-each
+     [("--delete") "Do the deletions (default is trial mode)"
+      (trial-mode #f)]
+     #:args args
+     (if (null? args) default-pats args)))
+  (for ([p pats])
+    (delete-pastes/pat p #:trial? (trial-mode))))
