@@ -368,7 +368,8 @@
           (table ((style "margin-top:-15px;font-size:95%"))
           ,@(reverse
              (with-redis-connection
-              (for/list ([pnum recent-pastes] #:when pnum)
+               (for/list ([pnum recent-pastes] #:when pnum
+                          #:when (HGET/str pnum 'name))
                 (define name (HGET/str pnum 'name))
                 (define trunc-name
                   (string-truncate name PASTE-TITLE-DISPLAY-LEN))
