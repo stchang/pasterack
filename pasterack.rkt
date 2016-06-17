@@ -411,6 +411,12 @@
                           [style ,(~~ "background-color:#FFFFF0"
                                       "border:inset thin"
                                       "font-size:105%"
+                                      "font-family:'PT Sans',sans-serif")]))
+                  (span "; recipient's nick: ")
+                  (input ([type "text"] [name "recipient"] [size "10"]
+                          [style ,(~~ "background-color:#FFFFF0"
+                                      "border:inset thin"
+                                      "font-size:105%"
                                       "font-family:'PT Sans',sans-serif")])))))
             (span ,status)
             (br)
@@ -499,7 +505,11 @@
                               'views 0))
     (when (exists-binding? 'irc bs)
       (define nick (extract-binding/single 'nick bs))
-      (irc-paste (++ (if (string=? "" nick) "" (++ nick " pasted: "))
+      (define recipient (if (exists-binding? 'recipient bs)
+                            (extract-binding/single 'recipient bs)
+			    ""))
+      (irc-paste (++ (if (string=? "" recipient) "" (++ recipient ": "))
+                     (if (string=? "" nick) "" (++ nick " pasted: "))
                      (if (string=? "" paste-name) "" (++ paste-name ", "))
                      paste-url)))
     (fprintf log-port "~a\t~a\t~a\t~a\n"
