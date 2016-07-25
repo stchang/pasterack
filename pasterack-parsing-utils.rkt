@@ -1,5 +1,5 @@
 #lang racket
-(require syntax/stx)
+(require syntax/stx syntax/parse)
 (require "pasterack-utils.rkt")
 
 ;; parsing utility functions used by pasterack.org
@@ -107,4 +107,23 @@
                       ;; (but set! must be classified same as define-values)
                       #'(module module* begin-for-syntax
                        #%provide #%require define-syntaxes))])
-              (free-identifier=? hd form)))))))
+             (free-identifier=? hd form)))))))
+
+;; stx utils
+(define (get-module-lang stx)
+  (syntax-parse stx #:datum-literals (module)
+    [(module _:id lang . mod-beg)
+     #'lang]
+    [_ #'racket]))
+(define (require-stx? stx)
+  (syntax-parse stx #:datum-literals (require)
+    [(require . _) #t]
+    [_ #f]))
+;; get-module-reqs : Syntax -> (List Syntax)
+(define (get-module-reqs stx)
+  (syntax-parse stx
+    [(_ name:id lang (mod-beg body ...))
+     (append*
+      (for/list ([e (stx->list #'(body ...))] #:when (require-stx? e))
+        (stx->list (stx-cdr e))))]
+    [_ empty]))

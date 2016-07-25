@@ -5,7 +5,7 @@
 (require xml xml/path net/url net/uri-codec json "recaptcha.rkt"
          "spam.rkt")
 (require racket/system racket/runtime-path)
-(require redis data/ring-buffer #;lang-file/read-lang-file)
+(require redis data/ring-buffer lang-file/read-lang-file)
 (require "pasterack-utils.rkt" "pasterack-parsing-utils.rkt"
          "pasterack-test-cases.rkt" "irc-bot.rkt" "filter-pastes.rkt")
 
@@ -79,47 +79,35 @@
 ;; returns generated pastenum
 (define (write-codeblock-scrbl-file code pnum)
   (define tmp-scrbl-file (build-path tmp-dir pnum (++ pnum "code.scrbl")))
-  (define-values (lang code-no-lang) (hashlang-split code))
-  (define lang-lst
-    (cond [(scribble-lang? lang) (list "racket" lang)]
-          [(htdp-lang? lang) (list (htdplang->modulename lang))]
-          [(or (TR-lang? lang) (plai-lang? lang)) (list)]
-          [(web-lang? lang) (list "web-server" "web-server/http")]
-          [else (list lang)]))
+  (define mod
+    (with-handlers ([exn:fail?
+                     (lambda (e)
+                       ; scribble will properly report read error
+                       ; just return dummy module to continue
+                       #'(module m racket/base (#%module-begin)))])
+      (call-with-input-string code read-lang-module)))
+  (define lang (get-module-lang mod))
   (define reqs   
     (with-handlers ([exn:fail? (const null)])  ;; read fail = non-sexp syntax
-      (with-input-from-string code-no-lang
-        (lambda () (for/list ([e (in-port)] #:when (require-datum? e))
-                     (second (get-require-spec e)))))))
+      (get-module-reqs mod)))
   (define valid-reqs 
     (string-join 
      (map to-string/s
 	  (filter 
 	   valid-req? 
-	   (append-map string->datums reqs)))))
-    
+	   (map syntax->datum reqs)))))
   (with-output-to-file tmp-scrbl-file
     (lambda () (printf
       (++ "#lang scribble/manual\n"
           "@(require racket/require)\n"
           "@(require (for-label "
-          (cond
-           [(TR-lang? lang)
-            (++ "(except-in typed/racket " TR-bad-ids ")\n"
-                "(only-meta-in 0 (only-in typed/racket " TR-bad-ids "))\n")]
-           [(plai-lang? lang)
-            (++ "(except-in plai " plai-bad-ids ")\n"
-                "(only-meta-in 0 (only-in plai " plai-bad-ids "))\n")]
-            [else ""])
-          ;; when required id is also in lang, favor require
-          (cond
-           [(htdp-lang? lang)
-            (++ valid-reqs " "
-                "(subtract-in " (car lang-lst)
-                " (combine-in " valid-reqs "))")]
-           [else (++ valid-reqs " "
-                     "(subtract-in (combine-in " (string-join lang-lst) ")"
-                     " (combine-in " valid-reqs "))")])
+          ;; when required id is also in lang, favor require (with subtract-in)
+          (++ "(only-meta-in 0 "
+              valid-reqs " "
+              "(subtract-in (combine-in "
+              (symbol->string (syntax->datum lang))
+              ")"
+              " (combine-in " valid-reqs ")))")
           "))\n"
           "@codeblock|{\n~a}|")
       code))
@@ -225,15 +213,12 @@
 
 (define (compile-scrbl-file/get-html pnum)
   (define new-tmpdir (build-path tmp-dir pnum))
-  (define err (open-output-file (build-path new-tmpdir (++ pnum "code.err"))))
   (define scrbl-file (build-path new-tmpdir (++ pnum "code.scrbl")))
   (define html-file (build-path new-tmpdir (++ pnum "code.html")))
-  (and (parameterize ([current-error-port err])
-         (begin0 (system (++ scrbl-exe " --html "
-                             "+m --redirect-main " racket-docs-url " "
-                             "--dest " (path->string new-tmpdir) " "
-                             (path->string scrbl-file)))
-                 (close-output-port err)))
+  (and (system (++ scrbl-exe " --html "
+                   "+m --redirect-main " racket-docs-url " "
+                   "--dest " (path->string new-tmpdir) " "
+                   (path->string scrbl-file)))
        (with-input-from-file html-file port->bytes)))
 (define (compile-eval-scrbl-file/get-html pnum)
   (define new-tmpdir (build-path tmp-dir pnum))
@@ -259,8 +244,11 @@
 (define (generate-paste-html code pastenum)
   (define paste-dir (build-path tmp-dir pastenum))
   (unless (directory-exists? paste-dir) (make-directory paste-dir))
-  (write-codeblock-scrbl-file code pastenum)
-  (compile-scrbl-file/get-html pastenum))
+  (define err (open-output-file (build-path paste-dir (++ pastenum "code.err"))))
+  (parameterize ([current-error-port err])
+    (write-codeblock-scrbl-file code pastenum)
+    (begin0 (compile-scrbl-file/get-html pastenum)
+            (close-output-port err))))
 (define (generate-eval-html code pastenum)
   ;; should check that tmp/pastenum dir exists here
   (write-eval-scrbl-file code pastenum)
@@ -454,7 +442,7 @@
                      (cons 'response captcha-token)
                      (cons 'remoteip (request-client-ip request))))
       #:headers '("Content-Type: application/x-www-form-urlencoded")))
-  (define captcha-success? ;as-text?
+  (define captcha-success?
     (hash-ref (read-json captcha-success-in) 'success #f))
   ;; very basic spam filter TODO: move check to client-side?
   (if (and captcha-success? (not (contains-banned? paste-content)))
@@ -720,7 +708,7 @@
 (define (serve-tests request)
   (define test-cases-htmls
     (let ([ns (with-redis-connection
-               (do-MULTI (for ([p test-cases]) (send-cmd 'HGET p 'name))))])
+                (do-MULTI (for ([p test-cases]) (send-cmd 'HGET p 'name))))])
       (for/list ([name/bytes ns] [pnum test-cases])
         (define name (bytes->string/utf-8 name/bytes))
         `(tr (td ,(mk-link (mk-paste-url pnum) pnum))

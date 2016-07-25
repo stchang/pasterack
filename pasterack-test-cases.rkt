@@ -5,7 +5,7 @@
 (define test-cases
   '(
     ;; require tests
-    "7262" ; html-render
+;    "7262" ; html-render ; deleted for some reason
     "5751" ; only-in
     "9993" ; except-in
     "8521" ; prefix-in
