@@ -23,8 +23,7 @@
 (define racket-logo-url "http://racket-lang.org/logo.png")
 (define racket-irc-url "https://botbot.me/freenode/racket/")
 
-(define scrbl-exe "/home/pasterack/racket64/bin/scribble")
-;(define scrbl-exe "/home/stchang/racket-6.2.0.3/bin/scribble")
+(define scrbl-exe "/home/pasterack/racket66/bin/scribble")
 
 (define PASTE-TITLE-DISPLAY-LEN 32) ; limit length of displayed title
 
