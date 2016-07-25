@@ -1,5 +1,7 @@
 #lang racket
 (require redis)
+(require "banned.rkt")
+(provide contains-banned?)
 
 ;; delete all non-hash vals (ie, not pastes)
 (define (delete-nonpastes #:trial? [trial? #f])
@@ -13,10 +15,16 @@
       (printf "deleting non-paste hash key: ~a\n" k)
       (unless trial? (DEL k)))))
 
+(define (contains-banned? str)
+  (for/or ([p default-pats])
+    (contains-pat? p str)))
+(define (contains-pat? pat str)
+  (define ci-pat (pregexp (string-append "(?i:" pat ")")))
+  (regexp-match ci-pat str))
+
 ; deletes pastes satisfying the given regexp pattern
 (define (delete-pastes/pat pat #:trial? [trial? #f])
   (define count 0)
-  (define ci-pat (pregexp (string-append "(?i:" pat ")")))
   (printf "searching for pastes with pattern: ~a" pat)
   (when trial? (printf " (trial)"))
   (printf "\n")
@@ -24,9 +32,8 @@
     (when (and (string=? (TYPE k) "hash") (HEXISTS k 'code)) ; valid paste
       (define paste-contents (HGET/str k 'code))
       (define paste-dir (build-path "tmp" (bytes->path k)))
-      (when (regexp-match ci-pat paste-contents)
+      (when (contains-pat? pat paste-contents)
         (printf "deleting paste: ~a\n" k)
-;        (displayln paste-contents)
         (when (directory-exists? paste-dir)
           (printf "... and deleting directory: ~a\n" paste-dir))
         (unless trial?
@@ -35,26 +42,6 @@
             (delete-directory/files paste-dir)))
         (set! count (add1 count)))))
   (printf "deleted ~a pastes matching pattern ~a\n" count pat))
-
-(define default-pats
-  '("amex"
-    "visa"
-    "mastercard"
-    "discover"
-    "rapidgator"
-    "turbobit"
-    "bitcoin"
-    "paypal"
-    "Western Union"
-    "Money Gram"
-    "wmz"
-    "cvv"
-    "Web Money"
-    "Perfect Money"
-    "torrent"
-    "hacked"
-    "accounts"
-    "premium"))
 
 (module+ main
   (define trial-mode (make-parameter #t))

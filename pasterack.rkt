@@ -5,9 +5,9 @@
 (require xml xml/path net/url net/uri-codec json "recaptcha.rkt"
          "spam.rkt")
 (require racket/system racket/runtime-path)
-(require redis data/ring-buffer)
+(require redis data/ring-buffer #;lang-file/read-lang-file)
 (require "pasterack-utils.rkt" "pasterack-parsing-utils.rkt"
-         "pasterack-test-cases.rkt" "irc-bot.rkt")
+         "pasterack-test-cases.rkt" "irc-bot.rkt" "filter-pastes.rkt")
 
 (provide/contract (start (request? . -> . response?)))
 
@@ -23,7 +23,7 @@
 (define racket-logo-url "http://racket-lang.org/logo.png")
 (define racket-irc-url "https://botbot.me/freenode/racket/")
 
-(define scrbl-exe "/home/pasterack/racket63/bin/scribble")
+(define scrbl-exe "/home/pasterack/racket64/bin/scribble")
 ;(define scrbl-exe "/home/stchang/racket-6.2.0.3/bin/scribble")
 
 (define PASTE-TITLE-DISPLAY-LEN 32) ; limit length of displayed title
@@ -397,7 +397,9 @@
             (input ([type "hidden"] [name "fork-from"] [value ,fork-from]))
             (br)
             (table (tr
-              (td ((style "width:18em")))
+              (td (input ([type "checkbox"] [name "astext"] [value "off"])))
+              (td ([style "font-size:90%"]) " Submit as text only")
+              (td ((style "width:2em")))
               ;; submit button -------------
               (td ((style "width:5em"))
                   (input ([type "image"] [alt "Submit Paste and Run"]
@@ -421,7 +423,7 @@
             (br)
             (div ([class "g-recaptcha"] 
                   [data-sitekey "6LdM0wYTAAAAAJPls_eNV28XvCRMeaf1cDoAV4Qx"])
-              "To paste as plaintext, check the box:"))
+                 "Please check the box:"))
          (br)(br)(br)
          ;; middle bottom (part of middle) ------------------------------------
          (div ([style "font-size:small;color:#808080"])
@@ -440,6 +442,7 @@
 (define (check-paste request)
   (define bs (request-bindings request))
   (define name (extract-binding/single 'name bs))
+  (define as-text? (exists-binding? 'astext bs))
   (define captcha-token (extract-binding/single 'g-recaptcha-response bs))
   (define paste-content (extract-binding/single 'paste bs))
   (define fork-from (extract-binding/single 'fork-from bs))
@@ -452,19 +455,16 @@
                      (cons 'response captcha-token)
                      (cons 'remoteip (request-client-ip request))))
       #:headers '("Content-Type: application/x-www-form-urlencoded")))
-  (define as-text? (hash-ref (read-json captcha-success-in) 'success #f))
+  (define captcha-success? ;as-text?
+    (hash-ref (read-json captcha-success-in) 'success #f))
   ;; very basic spam filter TODO: move check to client-side?
-  (if (and ;; probably spam
-           (or (not as-text?)
-               (check-ip (request-client-ip request)))
-           (not (has-hashlang? paste-content)))
+  (if (and captcha-success? (not (contains-banned? paste-content)))
+      (process-paste request as-text?)
       (serve-home request 
                   #:title name
                   #:content paste-content
                   #:fork-from fork-from
-                  #:status '(span "Invalid paste: must include #lang." (br)
-                             "Or check the box to paste as plaintext."))
-      (process-paste request as-text?)))
+                  #:status '(span "Invalid paste: check the captcha box."))))
 
 (define (process-paste request [as-text? #f])
   (define bs (request-bindings request))
