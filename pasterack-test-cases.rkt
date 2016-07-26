@@ -49,5 +49,6 @@
     "70309" ; s-exp comment before #lang
     "4683" ; explicit reader
     "32200" ; at-exp
+    "58952" ; 2d
     ;; BROKEN: submodule evaluation
     ))

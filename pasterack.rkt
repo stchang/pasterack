@@ -170,8 +170,8 @@
           (parameterize ([current-namespace (make-base-namespace)])
             (eval `(require ,(string->symbol lang)))
             (partition (lambda (d) (not-expr? d out)) datums)))
-;        (fprintf out "~a\n" (string-join (map to-string/s mod-datums)))
-;        (fprintf out "~a\n" (string-join (map to-string/s expr-datums)))
+        ;; (fprintf out "mod datums: ~a\n" (string-join (map to-string/s mod-datums)))
+        ;; (fprintf out "expr datums: ~a\n" (string-join (map to-string/s expr-datums)))
         (display
 ;        (printf
          (++ "#lang scribble/manual\n"
@@ -481,10 +481,10 @@
       (if as-text? #f (generate-paste-html pasted-code mod-stx paste-num)))
     (define paste-html-str (or html-res pasted-code))
     (define read-err-str
-      (with-input-from-file
-        (build-path tmp-dir paste-num (++ paste-num "read.err"))
-        port->string))
-    (displayln read-err-str)
+      (if as-text? ""
+          (with-input-from-file
+            (build-path tmp-dir paste-num (++ paste-num "read.err"))
+            port->string)))
     ;; html-res = #f means "as text" or scrbl compile fail (ie, read fail)
     ;; only eval on typeset compile success and no other errs
     (define eval-html-str
