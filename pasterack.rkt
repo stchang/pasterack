@@ -4,7 +4,7 @@
          web-server/http/request-structs)
 (require xml xml/path net/url net/uri-codec json "recaptcha.rkt"
          "spam.rkt")
-(require racket/system racket/runtime-path)
+(require racket/system racket/runtime-path syntax/modread)
 (require redis data/ring-buffer lang-file/read-lang-file)
 (require "pasterack-utils.rkt" "pasterack-parsing-utils.rkt"
          "pasterack-test-cases.rkt" "irc-bot.rkt" "filter-pastes.rkt")
@@ -77,15 +77,16 @@
 (define plai-bad-ids "#%module-begin provide")
 
 ;; returns generated pastenum
-(define (write-codeblock-scrbl-file code pnum)
+(define (write-codeblock-scrbl-file code modu pnum)
   (define tmp-scrbl-file (build-path tmp-dir pnum (++ pnum "code.scrbl")))
   (define mod
-    (with-handlers ([exn:fail?
-                     (lambda (e)
-                       ; scribble will properly report read error
-                       ; just return dummy module to continue
-                       #'(module m racket/base (#%module-begin)))])
-      (call-with-input-string code read-lang-module)))
+    (with-handlers
+      ([exn:fail?
+        (lambda (e)
+          ; most likely missing #lang
+          (eprintf "~a\n\nCheck that paste includes #lang?" (exn-message e))
+          #'(module m racket/base (#%module-begin)))])
+      (check-module-form modu 'pasterack (++ "paste " pnum))))
   (define lang (get-module-lang mod))
   (define reqs   
     (with-handlers ([exn:fail? (const null)])  ;; read fail = non-sexp syntax
@@ -113,9 +114,8 @@
       code))
     #:mode 'text
     #:exists 'replace))
-(define (write-eval-scrbl-file code pnum)
-  ; parse out #lang if it's there, otherwise use racket
-  (define-values (lang code-no-lang) (hashlang-split code))
+(define (write-eval-scrbl-file code mod pnum)
+  (define lang (symbol->string (syntax->datum (get-module-lang mod))))
   (define tmp-scrbl-file (build-path tmp-dir pnum (++ pnum "eval.scrbl")))
   (define out (current-output-port))
   (with-output-to-file tmp-scrbl-file
@@ -128,8 +128,7 @@
         ;; - other top-level defs get included in make-module-evaluator
         ;; because they are not allowed in interactions
         (define-values (code-defs/checks code-exprs)
-          (partition not-htdp-expr? (string->datums code-no-lang)))
-        (define lang-name (htdplang->modulename lang))
+          (partition not-htdp-expr? (map syntax->datum (get-module-bodys mod))))
       (printf
        (++ "#lang scribble/manual\n"
            "@(require scribble/eval racket/sandbox)\n"
@@ -150,7 +149,7 @@
                            "[exists \"/\"])]\n"
            "                    [sandbox-eval-limits '(20 128)])\n"
            "        (let ([e (make-module-evaluator "
-           "'(module m " lang-name
+           "'(module m " lang
            " (require test-engine/racket-tests) "
            (string-join (map to-string/s code-defs/checks))
            " (test))"
@@ -165,7 +164,7 @@
            " (test)]"))]
        ;; non htdp lang --------------------------------------------------
        [else
-        (define datums (string->datums code-no-lang))
+        (define datums (map syntax->datum (get-module-bodys mod)))
 ;        (for ([d datums]) (fprintf out "~a\n" d))
         (define-values (mod-datums expr-datums)
           (parameterize ([current-namespace (make-base-namespace)])
@@ -219,7 +218,7 @@
                    "+m --redirect-main " racket-docs-url " "
                    "--dest " (path->string new-tmpdir) " "
                    (path->string scrbl-file)))
-       (with-input-from-file html-file port->bytes)))
+        (with-input-from-file html-file port->bytes)))
 (define (compile-eval-scrbl-file/get-html pnum)
   (define new-tmpdir (build-path tmp-dir pnum))
   (define scrbl-file (build-path new-tmpdir (++ pnum "eval.scrbl")))
@@ -241,17 +240,25 @@
 ;; -- if eval results in 1 pict: tmp/<pastenum>/pict.png
 ;; -- if eval results in n picts: tmp/<pastenum>/pict_1.png through pict_n.png
 
-(define (generate-paste-html code pastenum)
+;; generate-paste-html : String Syntax String -> HTML
+;; code = pasted code
+;; mod = `read`ed pasted code
+(define (generate-paste-html code mod pastenum)
   (define paste-dir (build-path tmp-dir pastenum))
   (unless (directory-exists? paste-dir) (make-directory paste-dir))
+  ;; read.err contains errs before the compile, eg missing #lang
+  ;; needed otherwise extraneous scribble warnings will be displayed
+  (define read-err (open-output-file (build-path paste-dir (++ pastenum "read.err"))))
+  (parameterize ([current-error-port read-err])
+    (write-codeblock-scrbl-file code mod pastenum))
+  (close-output-port read-err)
   (define err (open-output-file (build-path paste-dir (++ pastenum "code.err"))))
   (parameterize ([current-error-port err])
-    (write-codeblock-scrbl-file code pastenum)
     (begin0 (compile-scrbl-file/get-html pastenum)
             (close-output-port err))))
-(define (generate-eval-html code pastenum)
+(define (generate-eval-html code mod pastenum)
   ;; should check that tmp/pastenum dir exists here
-  (write-eval-scrbl-file code pastenum)
+  (write-eval-scrbl-file code mod pastenum)
   (compile-eval-scrbl-file/get-html pastenum))
 
 (define google-analytics-script
@@ -461,19 +468,36 @@
     (define paste-name (extract-binding/single 'name bs))
     (define pasted-code (extract-binding/single 'paste bs))
     (define fork-from (extract-binding/single 'fork-from bs))
+    (define mod-stx
+      (with-handlers ([exn:fail?
+                       (lambda (e)
+                         ; either scribble will properly report read error,
+                         ; eg, unbalanced parens,
+                         ; or #lang missing and check-module-form will catch,
+                         ; so just return dummy module to continue
+                         #'(module m racket/base (#%module-begin)))])
+        (call-with-input-string pasted-code read-lang-module)))
     (define html-res
-      (if as-text? #f (generate-paste-html pasted-code paste-num)))
+      (if as-text? #f (generate-paste-html pasted-code mod-stx paste-num)))
     (define paste-html-str (or html-res pasted-code))
+    (define read-err-str
+      (with-input-from-file
+        (build-path tmp-dir paste-num (++ paste-num "read.err"))
+        port->string))
+    (displayln read-err-str)
+    ;; html-res = #f means "as text" or scrbl compile fail (ie, read fail)
+    ;; only eval on typeset compile success and no other errs
     (define eval-html-str
-      (if html-res
-          ;; eval only if able to read pasted code
-          (generate-eval-html pasted-code paste-num)
+      (if (and html-res (empty-string? read-err-str))
+          (generate-eval-html pasted-code mod-stx paste-num)
           ;; if not, use read error as output,
           ;; unless as-text was explicitly checked
-          (if as-text? #f
-              (with-input-from-file
-                (build-path tmp-dir paste-num (++ paste-num "code.err"))
-                port->string))))
+          (cond [as-text? #f]
+                [(non-empty-string? read-err-str) read-err-str]
+                [else
+                 (with-input-from-file
+                   (build-path tmp-dir paste-num (++ paste-num "code.err"))
+                   port->string)])))
     (define paste-url (mk-paste-url paste-num))
     (ring-buffer-push! recent-pastes paste-num)
     (define tm-str (get-time/iso8601))

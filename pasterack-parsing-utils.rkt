@@ -10,7 +10,7 @@
 (define hashlang-pat #px"^\\#lang ([\\w/\\-\\+]+)\\s*(.*)")
 (define weblang-pat #px"^web-server.*")
 (define scribblelang-pat #px"^scribble/.*")
-(define htdplang-pat #px"^htdp/(.*)")
+(define htdplang-pat #px"^lang/htdp-(.*)")
 (define TRlang-pat #px"^typed/racket.*")
 (define plai-pat #px"^plai.*")
 
@@ -121,9 +121,13 @@
     [_ #f]))
 ;; get-module-reqs : Syntax -> (List Syntax)
 (define (get-module-reqs stx)
+  (append*
+   (for/list ([e (get-module-bodys stx)] #:when (require-stx? e))
+     (stx->list (stx-cdr e)))))
+
+;; get-module-bodys : Syntax -> (List Syntax)
+(define (get-module-bodys stx)
   (syntax-parse stx
     [(_ name:id lang (mod-beg body ...))
-     (append*
-      (for/list ([e (stx->list #'(body ...))] #:when (require-stx? e))
-        (stx->list (stx-cdr e))))]
+     (stx->list #'(body ...))]
     [_ empty]))

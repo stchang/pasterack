@@ -34,3 +34,6 @@
   (if (<= (string-length str) len-limit)
       str
       (substring str 0 len-limit)))
+
+(define (empty-string? str)
+  (zero? (string-length str)))
