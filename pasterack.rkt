@@ -23,7 +23,7 @@
 (define racket-logo-url "http://racket-lang.org/logo.png")
 (define racket-irc-url "https://botbot.me/freenode/racket/")
 
-(define scrbl-exe "/home/pasterack/racket66/bin/scribble")
+(define scrbl-exe "/home/pasterack/racket68/bin/scribble")
 
 (define PASTE-TITLE-DISPLAY-LEN 32) ; limit length of displayed title
 
@@ -40,6 +40,9 @@
 (define log-port (open-output-file log-file #:mode 'text #:exists 'append))
 
 (pasterack-irc-connect)
+
+(unless (getenv "PLT_TR_NO_OPTIMIZE")
+  (putenv "PLT_TR_NO_OPTIMIZE" "1"))
 
 (define sample-pastes
   '("8953" ; Sierpinski
