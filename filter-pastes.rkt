@@ -31,12 +31,22 @@
   (for ([k (KEYS "*")])
     (when (and (string=? (TYPE k) "hash") (HEXISTS k 'code)) ; valid paste
       (define paste-contents (HGET/str k 'code))
+      (define paste-name (HGET/str k 'name))
       (define paste-dir (build-path "tmp" (bytes->path k)))
-      (when (contains-pat? pat paste-contents)
+      (when (or (contains-pat? pat paste-contents)
+                (contains-pat? pat paste-name))
         (printf "deleting paste: ~a\n" k)
         (when (directory-exists? paste-dir)
           (printf "... and deleting directory: ~a\n" paste-dir))
         (unless trial?
+          ;; log the deletion
+          (with-output-to-file (build-path "deleted-pastes" (bytes->path k))
+            (lambda ()
+              (printf "time: ~a\n" (HGET/str k 'time))
+              (printf "name: ~a\n" (HGET/str k 'name))
+              (printf "num: ~a\n" k)
+              (printf "~a\n" paste-contents)))
+          ;; do the deletion
           (DEL k)
           (when (directory-exists? paste-dir)
             (delete-directory/files paste-dir)))

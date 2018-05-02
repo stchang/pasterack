@@ -455,7 +455,9 @@
   (define captcha-success?
     (hash-ref (read-json captcha-success-in) 'success #f))
   ;; very basic spam filter TODO: move check to client-side?
-  (if (and captcha-success? (not (contains-banned? paste-content)))
+  (if (and captcha-success?
+           (not (contains-banned? name))
+           (not (contains-banned? paste-content)))
       (process-paste request as-text?)
       (serve-home request 
                   #:title name
