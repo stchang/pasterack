@@ -436,6 +436,17 @@
          ))))
   (send/suspend/dispatch response-generator))
 
+(define (check-paste-check-bindings request)
+  (define bs (request-bindings request))
+  (if (and (andmap (λ (b) (exists-binding? b bs))
+                   '(name g-recaptcha-response paste fork-from))
+           (implies (exists-binding? 'irc bs)
+                    (exists-binding? 'nick bs)))
+      (check-paste request)
+      (response/xexpr
+       `(html ()
+          (head ())
+          (body () "ERROR: bad paste" ,(mk-link pastebin-url "Go Back"))))))
 (define (check-paste request)
   (define bs (request-bindings request))
   (define name (extract-binding/single 'name bs))
@@ -766,6 +777,7 @@
 (define-values (do-dispatch mk-url)
   (dispatch-rules
    [("") serve-home]
+   [("rest") #:method "post" check-paste-check-bindings]
    [("pastes" (string-arg)) serve-paste]
    [("tests") serve-tests]
    [("bacon") serve-bacon]
