@@ -23,7 +23,7 @@
 (define racket-logo-url "http://racket-lang.org/logo.png")
 (define racket-irc-url "https://botbot.me/freenode/racket/")
 
-(define scrbl-exe "/home/pasterack/racket68/bin/scribble")
+(define scrbl-exe "/home/pasterack/racket73/bin/scribble")
 
 (define PASTE-TITLE-DISPLAY-LEN 32) ; limit length of displayed title
 
@@ -535,6 +535,23 @@
             (xml->xexpr (document-element
                          (with-input-from-bytes html-bytes read-xml))))))))
 
+(define (serve-raw-paste request pastenum)
+  (define retrieved-paste-hash
+    (with-redis-connection
+     (when (HEXISTS pastenum 'views) (HINCRBY pastenum 'views 1))
+     (GET/hash pastenum #:map-key bytes->symbol)))
+  (match retrieved-paste-hash
+    [(hash-table ('name paste-name) ('code code) ('code-html code-html)
+                 ('eval-html eval-html) ('time time-str)
+                 ('fork-from fork-from) ('views views))
+     (response/xexpr (bytes->string/utf-8 code) #:mime-type #"text/plain; charset=utf-8")]
+   [_
+    (response/xexpr
+     `(html() (head (title "Paste not found"))
+        (body ()
+         ,(format "Paste # ~a doesn't exist." pastenum) (br)
+         ,(mk-link pastebin-url "Go Back"))))]))
+
 (define (serve-paste request pastenum)
   (define retrieved-paste-hash
     (with-redis-connection
@@ -766,6 +783,7 @@
 (define-values (do-dispatch mk-url)
   (dispatch-rules
    [("") serve-home]
+   [("pastes" (string-arg) "raw") serve-raw-paste]
    [("pastes" (string-arg)) serve-paste]
    [("tests") serve-tests]
    [("bacon") serve-bacon]
