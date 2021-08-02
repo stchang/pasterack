@@ -1,7 +1,7 @@
 #lang racket
 (require redis)
 (require "banned.rkt")
-(provide contains-banned?)
+(provide contains-banned? contains-pat?)
 
 ;; delete all non-hash vals (ie, not pastes)
 (define (delete-nonpastes #:trial? [trial? #f])

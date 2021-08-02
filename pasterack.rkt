@@ -751,6 +751,22 @@
         ,(if (string=? name "") '(br) `(h4 ,name))
         ,main-html)))))) )]))
 
+(define (serve-search request searchpat)
+  (response/xexpr
+   `(html () (head (title "Search results: " searchpat))
+      (body ()
+        (table ()
+               . ,(for/list ([k (KEYS "*")]
+                           #:when (and (string=? (TYPE k) "hash")
+                                       (HEXISTS k 'code) ; valid paste
+                                       (let ([paste-contents (HGET/str k 'code)]
+                                             [paste-name (HGET/str k 'name)])
+                                         (or (contains-pat? searchpat paste-contents)
+                                             (contains-pat? searchpat paste-name)))))
+                 (define pnum (bytes->string/utf-8 k))
+                 `(tr (td ,(mk-link (mk-paste-url pnum) pnum))
+                      (td ((style "width:1px"))) (td ,(HGET/str k 'name)))))))))
+
 (define (serve-tests request)
   (define test-cases-htmls
     (let ([ns (with-redis-connection
@@ -785,6 +801,7 @@
    [("") serve-home]
    [("pastes" (string-arg) "raw") serve-raw-paste]
    [("pastes" (string-arg)) serve-paste]
+   [("search" (string-arg)) serve-search]
    [("tests") serve-tests]
    [("bacon") serve-bacon]
    #;[else serve-home]))
