@@ -94,7 +94,7 @@
     (and hd
          ;; check for begin
       (or (and (free-identifier=? hd #'begin)
-               (for/and ([s (syntax->list (stx-cdr (expand d)))])
+               (for/and ([s (stx->list (stx-cdr (expand d)))])
                  (not-expr? s out)))
           (and
            ;; (when (or (free-identifier=? hd #'define-syntaxes)
