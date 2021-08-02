@@ -397,17 +397,7 @@
               ;; submit button -------------
               (td ((style "width:5em"))
                   (input ([type "image"] [alt "Submit Paste and Run"]
-                          [src "/submit.png"])))
-              ;; paste to irc --------------
-              (td ((style "font-size:90%"))
-                  (input ([type "checkbox"] [name "irc"] [value "off"]))
-                  (span " Alert "
-                       ,(mk-link racket-irc-url "#racket") "; your nick: ")
-                  (input ([type "text"] [name "nick"] [size "10"]
-                          [style ,(~~ "background-color:#FFFFF0"
-                                      "border:inset thin"
-                                      "font-size:105%"
-                                      "font-family:'PT Sans',sans-serif")])))))
+                          [src "/submit.png"])))))
             (span ,status)
             (br)
             (span "Paste must be a valid #lang program.")
