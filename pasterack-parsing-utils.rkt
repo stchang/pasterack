@@ -131,3 +131,23 @@
     [(_ name:id lang (mod-beg body ...))
      (stx->list #'(body ...))]
     [_ empty]))
+
+;; copied from AlexKnauth lang-file pkg (unprovided fns)
+
+;; private value eq? to itself
+(define read-language-fail (gensym 'read-language-fail))
+(define (read-language-fail? v)
+  (eq? v read-language-fail))
+;; read-lang : Input-Port -> (U False String)
+(define (read-lang port)
+  (port-count-lines! port)
+  (define port* (peeking-input-port port))
+  (port-count-lines! port*)
+  (and
+   (with-handlers ([exn:fail:read? (λ (e) #false)])
+     (not (read-language-fail? (read-language port* (λ () read-language-fail)))))
+   (let* ([end (file-position port*)]
+          [str (read-string end port)]
+          [hash-lang-positions (regexp-match-positions* "#lang|#!" str)]
+          [start (cdr (last hash-lang-positions))])
+          (string-trim (substring str start)))))

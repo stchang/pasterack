@@ -394,9 +394,6 @@
             (input ([type "hidden"] [name "fork-from"] [value ,fork-from]))
             (br)
             (table (tr
-              (td (input ([type "checkbox"] [name "astext"] [value "off"])))
-              (td ([style "font-size:90%"]) " Submit as text only")
-              (td ((style "width:2em")))
               ;; submit button -------------
               (td ((style "width:5em"))
                   (input ([type "image"] [alt "Submit Paste and Run"]
@@ -412,6 +409,8 @@
                                       "font-size:105%"
                                       "font-family:'PT Sans',sans-serif")])))))
             (span ,status)
+            (br)
+            (span "Paste must be a valid #lang program.")
             (br)
             (span ,(if (string=? "" fork-from) ""
                        `(span "Forked from paste # " 
@@ -443,6 +442,8 @@
   (define captcha-token (extract-binding/single 'g-recaptcha-response bs))
   (define paste-content (extract-binding/single 'paste bs))
   (define fork-from (extract-binding/single 'fork-from bs))
+  (define lang/#f ; ban pastes that are not valid #lang program
+    (call-with-input-string paste-content read-lang))
   (define-values (status headers captcha-success-in)
     (http-sendrecv/url 
       (string->url "https://www.google.com/recaptcha/api/siteverify")
@@ -455,7 +456,8 @@
   (define captcha-success?
     (hash-ref (read-json captcha-success-in) 'success #f))
   ;; very basic spam filter TODO: move check to client-side?
-  (if (and captcha-success?
+  (if (and lang/#f
+           captcha-success?
            (not (contains-banned? name))
            (not (contains-banned? paste-content)))
       (process-paste request as-text?)
@@ -463,7 +465,7 @@
                   #:title name
                   #:content paste-content
                   #:fork-from fork-from
-                  #:status '(span "Invalid paste: check the captcha box."))))
+                  #:status '(span "Invalid paste: possibly captcha failed or invalid #lang program."))))
 
 (define (process-paste request [as-text? #f])
   (define bs (request-bindings request))
