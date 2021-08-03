@@ -17,13 +17,14 @@
 
 ;(define pastebin-url "http://162.243.38.241:8000/")
 (define pastebin-url "http://pasterack.org/")
+;(define pastebin-url "http://143.198.140.118/")
 (define paste-url-base (++ pastebin-url "pastes/"))
 (define racket-docs-url "http://docs.racket-lang.org/")
 (define racket-lang-url "http://racket-lang.org")
 (define racket-logo-url "http://racket-lang.org/logo.png")
 (define racket-irc-url "https://botbot.me/freenode/racket/")
 
-(define scrbl-exe "/home/pasterack/racket73/bin/scribble")
+(define scrbl-exe "/home/pasterack/racket82/bin/scribble")
 
 (define PASTE-TITLE-DISPLAY-LEN 32) ; limit length of displayed title
 
@@ -146,6 +147,7 @@
                          "'([read \"/home/pasterack/pasterack/tmp/\"]\n"
                          ;; images seem to need access to the prefs file
                            "[read \"/home/pasterack/.racket/\"]\n"
+                           "[read \"/home/pasterack/.config/\"]\n" ; prefs moved here? (v8?)
                            ;; 2htdp/image performs exists? checks on libpng
                            "[exists \"/\"])]\n"
            "                    [sandbox-eval-limits '(20 128)])\n"
@@ -189,6 +191,7 @@
              "                    [sandbox-path-permissions "
                          "'([read \"/home/pasterack/pasterack/tmp/\"]"
                            "[read \"/home/pasterack/.racket/\"]\n"
+                           "[read \"/home/pasterack/.config/\"]\n" ; prefs moved here? (v8?)
                            ;; 2htdp/image performs exists? checks on libpng
                            "[exists \"/\"])]\n"
              "                     [sandbox-eval-limits '(20 128)])\n"
@@ -376,7 +379,7 @@
           (img ((src ,racket-logo-url)))
           (h2 ,(mk-link pastebin-url "PasteRack")
               ": An evaluating pastebin for "
-              ,(mk-link racket-lang-url "Racket") ".")
+              ,(mk-link racket-lang-url "Racket") (small " (v" ,(version) ")"))
           (form ([action ,(embed/url check-paste)] [method "post"])
             (div 
               (input ([type "text"] [name "name"] [size "60"] [value ,title]
