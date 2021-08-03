@@ -50,5 +50,6 @@
     "4683" ; explicit reader
     "32200" ; at-exp
     "58952" ; 2d
+    "11302" ; issue #61 stx->list
     ;; BROKEN: submodule evaluation
     ))

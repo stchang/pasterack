@@ -7,7 +7,7 @@
 (require racket/system racket/runtime-path syntax/modread)
 (require redis data/ring-buffer lang-file/read-lang-file)
 (require "pasterack-utils.rkt" "pasterack-parsing-utils.rkt"
-         "pasterack-test-cases.rkt" "irc-bot.rkt" "filter-pastes.rkt")
+         "pasterack-test-cases.rkt" "filter-pastes.rkt")
 
 (provide/contract (start (request? . -> . response?)))
 
@@ -38,8 +38,6 @@
 ;; logging
 (define log-file (build-path here-dir "pasterack.log"))
 (define log-port (open-output-file log-file #:mode 'text #:exists 'append))
-
-(pasterack-irc-connect)
 
 (unless (getenv "PLT_TR_NO_OPTIMIZE")
   (putenv "PLT_TR_NO_OPTIMIZE" "1"))
@@ -505,11 +503,6 @@
                               'time tm-str
                               'fork-from fork-from
                               'views 0))
-    (when (exists-binding? 'irc bs)
-      (define nick (extract-binding/single 'nick bs))
-      (irc-paste (++ (if (string=? "" nick) "" (++ nick " pasted: "))
-                     (if (string=? "" paste-name) "" (++ paste-name ", "))
-                     paste-url)))
     (fprintf log-port "~a\t~a\t~a\t~a\n"
              tm-str paste-num paste-name (request-client-ip request))
     (redirect-to paste-url permanently)]
