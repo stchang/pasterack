@@ -426,11 +426,8 @@
          ))))
   (send/suspend/dispatch response-generator))
 
-(define (serve-home/compat request content [title #f])
-  (if title
-      (serve-home request #:title title
-                          #:content content)
-      (serve-home request #:content content)))
+(define (serve-home/prefill request content [title ""])
+  (serve-home request #:title title #:content content))
 
 (define (check-paste request)
   (define bs (request-bindings request))
@@ -793,8 +790,8 @@
 (define-values (do-dispatch mk-url)
   (dispatch-rules
    [("") serve-home]
-   [("paste" (string-arg)) serve-home/compat]
-   [("paste" (string-arg) (string-arg)) serve-home/compat]
+   [("paste" (string-arg)) serve-home/prefill] ; prefill content
+   [("paste" (string-arg) (string-arg)) serve-home/prefill] ; prefill w/ title
    [("pastes" (string-arg) "raw") serve-raw-paste]
    [("pastes" (string-arg)) serve-paste]
    [("search" (string-arg)) serve-search]
